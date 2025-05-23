@@ -65,7 +65,7 @@ export default function CustomerChat({ companyId }: CustomerChatProps) {
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your message..."
           onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-          className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="flex-1 p-3 text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <button
           onClick={sendMessage}

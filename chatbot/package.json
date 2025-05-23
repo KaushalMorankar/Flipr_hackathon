@@ -13,6 +13,8 @@
     "@google/generative-ai": "^0.24.1",
     "@pinecone-database/pinecone": "^6.0.1",
     "@prisma/client": "^6.8.2",
+    "bcrypt": "^6.0.0",
+    "lucide-react": "^0.511.0",
     "next": "15.1.8",
     "prisma": "^6.8.2",
     "react": "^19.0.0",
