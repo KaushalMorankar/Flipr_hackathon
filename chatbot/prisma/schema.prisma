@@ -1,0 +1,81 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id            String    @id @default(cuid())
+  name          String
+  subdomain     String    @unique
+  createdAt     DateTime  @default(now())
+  users         User[]
+  knowledgeBase KnowledgeBase[]
+  tickets       Ticket[]
+}
+
+
+
+enum Role {
+  ADMIN
+  AGENT
+  CUSTOMER
+}
+
+model KnowledgeBase {
+  id          String    @id @default(cuid())
+  title       String
+  content     String
+  embeddings  Float[]   // For Pinecone integration
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  createdAt   DateTime  @default(now())
+}
+
+model Ticket {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  subject     String
+  status      TicketStatus
+  priority    Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  messages    Message[]
+  agent       User?     @relation("AgentTickets", fields: [agentId], references: [id])
+  agentId     String?
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  ticketId  String
+  ticket    Ticket    @relation(fields: [ticketId], references: [id])
+  senderId  String?
+  sender    User?     @relation("MessageToUser", fields: [senderId], references: [id])
+  content   String
+  role      String
+  createdAt DateTime  @default(now())
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  role      Role
+  companyId String
+  company   Company   @relation(fields: [companyId], references: [id])
+  tickets   Ticket[]  @relation("AgentTickets")
+  messages  Message[] @relation("MessageToUser") // ✅ Added
+  createdAt DateTime  @default(now())
+}
