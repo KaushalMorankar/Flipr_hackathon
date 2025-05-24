@@ -22,6 +22,6 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "prisma/seed.ts", "tools/upload-knowledge-to-pinecone.ts", "tools/dummy-knowledge.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "prisma/seed.ts", "tools/upload-knowledge-to-pinecone.ts", "tools/dummy-knowledge.ts", "tools/dummy-knowledge.mts"],
   "exclude": ["node_modules"]
 }

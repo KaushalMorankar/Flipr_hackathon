@@ -2,7 +2,7 @@
 import dotenv from 'dotenv';
 import { Pinecone } from '@pinecone-database/pinecone';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { dummyKnowledgeBase } from './dummy-knowledge';
+import { dummyKnowledgeBase } from './dummy-knowledge.mjs';
 
 dotenv.config(); // Load .env variables
 
