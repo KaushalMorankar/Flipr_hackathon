@@ -1,75 +1,94 @@
-// components/CustomerChat.tsx
-'use client';
-import { useState } from 'react';
+"use client";
 
-interface CustomerChatProps {
+import { useState, useRef, useEffect } from "react";
+
+interface Props {
   companyId: string;
 }
 
-export default function CustomerChat({ companyId }: CustomerChatProps) {
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
-  const [input, setInput] = useState('');
+interface Message {
+  from: "user" | "bot";
+  text: string;
+}
 
-  const sendMessage = async () => {
+export default function CustomerChat({ companyId }: Props) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  // scroll to bottom on new msg
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const send = async () => {
     if (!input.trim()) return;
-
-    const userMessage = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMessage]);
+    const userMsg = input.trim();
+    setMessages((m) => [...m, { from: "user", text: userMsg }]);
+    setInput("");
+    setIsSending(true);
 
     try {
-      const res = await fetch('/api/chatbot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: input,
-          companyId: companyId // Dynamic company ID
-        })
+      const res = await fetch("/api/chatbot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMsg, companyId }),
       });
-      
-      const data = await res.json();
-      setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
-    } catch (error) {
-      console.error('Chat error:', error);
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Error connecting to chatbot.' }]);
-    }
 
-    setInput('');
+      const body = await res.json();
+      if (res.ok) {
+        setMessages((m) => [...m, { from: "bot", text: body.reply }]);
+      } else {
+        setMessages((m) => [
+          ...m,
+          { from: "bot", text: `Error: ${body.error || res.statusText}` },
+        ]);
+      }
+    } catch (err: any) {
+      setMessages((m) => [
+        ...m,
+        { from: "bot", text: `Network error: ${err.message}` },
+      ]);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
-    <div className="flex flex-col h-[600px]">
-      {/* Chat Window */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, i) => (
+    <div className="flex flex-col h-[500px]">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map((m, i) => (
           <div
             key={i}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`flex ${m.from === "bot" ? "justify-start" : "justify-end"}`}
           >
             <div
-              className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-lg ${
-                msg.role === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-800'
+              className={`px-4 py-2 rounded-lg max-w-xs ${
+                m.from === "bot"
+                  ? "bg-gray-100 text-gray-800"
+                  : "bg-blue-500 text-white"
               }`}
             >
-              <div className="whitespace-pre-wrap">{msg.content}</div>
+              {m.text}
             </div>
           </div>
         ))}
+        <div ref={endRef} />
       </div>
-
-      {/* Input Area */}
-      <div className="mt-4 flex space-x-2">
+      <div className="p-4 border-t flex space-x-2">
         <input
+          className="flex-1 border rounded-lg px-3 py-2 focus:outline-none"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !isSending && send()}
+          disabled={isSending}
           placeholder="Type your message..."
-          onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-          className="flex-1 p-3 text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <button
-          onClick={sendMessage}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
+          onClick={send}
+          disabled={isSending}
         >
           Send
         </button>
