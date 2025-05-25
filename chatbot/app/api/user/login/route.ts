@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
         role: 'CUSTOMER' // ✅ Use correct role from your schema
       }
     });
-
+    
     // Step 3: Check if user exists
     if (!user) {
       return NextResponse.json(
