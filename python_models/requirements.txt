@@ -8,3 +8,4 @@ pinecone>=3.0.0
 uvicorn[standard]
 pyreadline3
 google-generativeai
+prisma

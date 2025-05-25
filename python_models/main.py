@@ -160,15 +160,20 @@ async def chat(req: ChatRequest):
 
 
     if should_handoff(req.message, reply):
-        # Create ticket logic (stubbed)
         ticket_id = "TICKET-12345"
         return ChatResponse(
             reply=f"I'm escalating you to a human agent. Your ticket is #{ticket_id}.",
             escalated=True,
-            ticketId=ticket_id
+            ticketId=ticket_id,
+            sessionId=req.sessionId      # <— echo it back
         )
 
-    return ChatResponse(reply=reply)
+    return ChatResponse(
+        reply=reply,
+        escalated=False,
+        ticketId=None,
+        sessionId=req.sessionId          # <— echo it back
+    )
 
 @app.get("/test")
 async def test_embedding():

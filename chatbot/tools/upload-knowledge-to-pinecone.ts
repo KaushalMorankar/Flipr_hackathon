@@ -2,46 +2,50 @@
 import dotenv from 'dotenv';
 import { Pinecone } from '@pinecone-database/pinecone';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { dummyKnowledgeBase } from './dummy-knowledge.js';  // <-- note .js extension at runtime
+import { dummyKnowledgeBase } from './dummy-knowledge.mjs';
 
-dotenv.config();
+dotenv.config(); // Load .env variables
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 async function uploadKnowledgeToPinecone() {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-  const pinecone = new Pinecone({
-    apiKey: process.env.PINECONE_API_KEY!,
-    environment: process.env.PINECONE_ENVIRONMENT!,
-  });
-  const index = pinecone.Index(process.env.PINECONE_INDEX_NAME!);
+  try {
+    const pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!
+    });
 
-  for (const namespace of Object.keys(dummyKnowledgeBase)) {
-    const docs = dummyKnowledgeBase[namespace];
+    const index = pinecone.Index(process.env.PINECONE_INDEX_NAME!);
+    const embeddingModel = genAI.getGenerativeModel({ model: 'embedding-001' });
 
-    // embed + collect
-    const batch = await Promise.all(
-      docs.map(async (doc) => {
-        const embeddingModel = genAI.getGenerativeModel({ model: 'embedding-001' });
-        const result = await embeddingModel.embedContent({
-          content: { parts: [{ text: doc.content }], role: 'user' },
+    for (const companyId in dummyKnowledgeBase) {
+      for (const item of dummyKnowledgeBase[companyId]) {
+        const embeddingResult = await embeddingModel.embedContent({
+          content: {
+            parts: [{ text: item.content }],
+            role: 'user'
+          }
         });
 
-        return {
-          id: doc.id,
-          values: result.embedding.values,
-          metadata: { title: doc.title, text: doc.content },
-        };
-      })
-    );
+        await index.namespace(companyId).upsert([
+          {
+            id: item.id,
+            values: embeddingResult.embedding.values,
+            metadata: {
+              text: item.content,
+              title: item.title,
+              companyId
+            }
+          }
+        ]);
 
-    // upsert whole batch into the namespace
-    await index.namespace(namespace).upsert(batch);
-    console.log(`✅ Upserted ${batch.length} docs into namespace "${namespace}"`);
+        console.log(`✅ Uploaded ${item.id} for ${companyId}`);
+      }
+    }
+
+    console.log('🚀 Knowledge base uploaded to Pinecone');
+  } catch (error) {
+    console.error('❌ Pinecone upload error:', error);
   }
-
-  console.log('🚀 All knowledge uploaded to Pinecone');
 }
 
-uploadKnowledgeToPinecone().catch((err) => {
-  console.error('❌ Upload error:', err);
-  process.exit(1);
-});
+uploadKnowledgeToPinecone();
