@@ -1,6 +1,8 @@
 import os
 import logging
 import google.generativeai as genai
+import numpy as np
+from typing import List, Dict
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -119,34 +121,88 @@ async def startup_event():
     check_index_dimension()
     logger.info("✅ Pinecone index dimension verified (768).")
 
+
+# Helper function for cosine similarity
+def cosine_similarity(vec1, vec2):
+    return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    hist = await get_history(req.sessionId)
+    # Retrieve and update history
+    original_hist = await get_history(req.sessionId)
+    hist = original_hist.copy()
     hist.append({"role": "user", "text": req.message})
 
+    # Generate embedding for current query
     emb = embed_text(req.message)
 
     # Query Pinecone
     docs = search_index(emb, req.companyId, top_k=3)
 
     # Build context
-    context_lines = []
-    for d in docs:
-        context_lines.append(f"— **{d['title']}** (#{d['docId']}): {d['content']}")
-    context_block = "\n".join(context_lines) or "No relevant articles found."
+    context_block = ""
+    if not docs:
+        # No KB docs found: Check recent history
+        recent_user_messages = [
+            msg for msg in reversed(original_hist) 
+            if msg['role'] == 'user'
+        ][:5]  # Get last 5 user messages
+        
+        relevant_context = []
+        threshold = 0.7  # Adjust based on testing
+
+        for umsg in recent_user_messages:
+            # Generate embedding for historical message
+            umsg_emb = embed_text(umsg['text'])
+            sim = cosine_similarity(emb, umsg_emb)
+
+            if sim > threshold:
+                # Find corresponding bot response
+                index = original_hist.index(umsg)
+                if index + 1 < len(original_hist):
+                    bot_msg = original_hist[index + 1]
+                    if bot_msg['role'] == 'bot':
+                        relevant_context.append(
+                            f"User previously asked: {umsg['text']}\n"
+                            f"Bot replied: {bot_msg['text']}"
+                        )
+        
+        if relevant_context:
+            context_block = "\n".join(relevant_context)
+        else:
+            context_block = (
+                "No relevant information found in knowledge base or recent history."
+            )
+    else:
+        # Build context from KB docs
+        context_lines = []
+        for d in docs:
+            context_lines.append(
+                f"— **{d['title']}** (#{d['docId']}): {d['content']}"
+            )
+        context_block = "\n".join(context_lines)
 
     # Assemble prompt
     prompt = (
         f"You are a support assistant for **{req.companyId}**.\n\n"
-        "Use the following knowledge base articles:\n"
+        "--- QUESTION ---\n"
+        f"{req.message}\n\n"
+        "--- KNOWLEDGE BASE ---\n"
         f"{context_block}\n\n"
-        "Conversation so far:\n" +
+        "--- CONVERSATION HISTORY ---\n" +
         "\n".join(f"{m['role']}: {m['text']}" for m in hist) +
-        "\n\nBot:"
+        "\n\n"
+        "--- INSTRUCTIONS ---\n"
+        "1. Always prioritize the knowledge base context to answer the user's question.\n"
+        "2. Only use the conversation history if the knowledge base lacks relevant information.\n"
+        "3. If the knowledge base contradicts the history, prioritize the knowledge base.\n"
+        "4. Keep your response concise and grounded in the knowledge base.\n"
+        "4. Check the response if the message is similar and correct.If not, give the response as ***No relevant Information***.\n\n"
+        "--- RESPONSE ---\n"
+        "Bot:"
     )
-    print(pine_idx.describe_index_stats()["namespaces"])
 
-    # Use Gemini to generate reply
+    # Generate reply
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
@@ -155,24 +211,25 @@ async def chat(req: ChatRequest):
         logger.error(f"Gemini generation failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate response")
 
+    # Update history
     hist.append({"role": "bot", "text": reply})
     await save_history(req.sessionId, hist)
 
-
+    # Handoff logic
     if should_handoff(req.message, reply):
-        ticket_id = "TICKET-12345"
+        ticket_id = "TICKET-12345"  # Replace with actual ticketing logic
         return ChatResponse(
             reply=f"I'm escalating you to a human agent. Your ticket is #{ticket_id}.",
             escalated=True,
             ticketId=ticket_id,
-            sessionId=req.sessionId      # <— echo it back
+            sessionId=req.sessionId
         )
 
     return ChatResponse(
         reply=reply,
         escalated=False,
         ticketId=None,
-        sessionId=req.sessionId          # <— echo it back
+        sessionId=req.sessionId
     )
 
 @app.get("/test")

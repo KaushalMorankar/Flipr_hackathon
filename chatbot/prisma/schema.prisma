@@ -13,7 +13,6 @@ model Company {
   id            String    @id @default(cuid())
   name          String
   subdomain     String    @unique
-  namespace     String    @unique
   createdAt     DateTime  @default(now())
   users         User[]
   knowledgeBase KnowledgeBase[]
