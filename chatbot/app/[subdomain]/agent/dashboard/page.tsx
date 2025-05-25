@@ -1,26 +1,32 @@
 // app/[subdomain]/agent/dashboard/page.tsx
 'use client';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function AgentDashboard({ params }: { params: { subdomain: string } }) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // ✅ Use valid regex
-    const tokenMatch = document.cookie.match(/auth_token=([^;]+)/);
-    const token = tokenMatch ? tokenMatch[1] : null;
-
-    if (!token) {
+    const cookie = document.cookie;
+    const tokenMatch = cookie.match(/auth_token=([^;]+)/);
+    if (!tokenMatch) {
       window.location.href = '/agent/login';
       return;
     }
 
-    // ✅ Decode JWT safely
     try {
+      const token = tokenMatch[1];
       const decoded = JSON.parse(atob(token.split('.')[1]));
+
       if (!decoded || decoded.role !== 'AGENT') {
         window.location.href = '/agent/login';
+        return;
+      }
+
+      // ✅ Use subdomain from JWT
+      if (params.subdomain !== decoded.subdomain) {
+        window.location.href = `/${decoded.subdomain}/agent/dashboard`;
+        return;
       }
 
       setUser(decoded);
@@ -29,14 +35,14 @@ export default function AgentDashboard({ params }: { params: { subdomain: string
       console.error('JWT decode error:', error);
       window.location.href = '/agent/login';
     }
-  }, []);
+  }, [params.subdomain]);
 
   if (loading) return <p>Loading...</p>;
 
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold">Agent Dashboard for {params.subdomain}.yourapp.com</h1>
-      <p>Welcome, {user?.email}</p>
+      <p className="mt-2">Welcome, {user.email}</p>
     </div>
   );
 }

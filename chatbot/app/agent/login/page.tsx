@@ -8,23 +8,31 @@ export default function AgentLogin() {
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  const res = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
-  });
+    e.preventDefault();
 
-  if (res.ok) {
-    const data = await res.json();
-    const { subdomain } = data.user;
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
 
-    // ✅ Now subdomain is defined
-    window.location.href = `/${subdomain}/agent/dashboard`;
-  } else {
-    setError('Invalid email or password');
-  }
-};
+    if (res.ok) {
+      const data = await res.json();
+      const token = data.token;
+      const decoded = JSON.parse(atob(token.split('.')[1]));
+
+      // ✅ Use subdomain from JWT
+      if (!decoded.subdomain) {
+        setError('Subdomain not found in token');
+        return;
+      }
+
+      window.location.href = `/${decoded.subdomain}/agent/dashboard`;
+    } else {
+      const errData = await res.json();
+      setError(errData.error || 'Invalid credentials');
+    }
+  };
 
   return (
     <div className="p-4 max-w-md mx-auto">
