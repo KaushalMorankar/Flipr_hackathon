@@ -9,3 +9,7 @@ uvicorn[standard]
 pyreadline3
 google-generativeai
 prisma
+datetime
+textblob
+scikit-learn
+tenacity

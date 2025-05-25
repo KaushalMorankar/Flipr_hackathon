@@ -1,14 +1,22 @@
 import os
+import time
+import uuid
+import json
 import logging
-import google.generativeai as genai
+from datetime import datetime
 import numpy as np
+import redis.asyncio as redis
 from typing import List, Dict
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import redis.asyncio as redis
+import google.generativeai as genai
 from pinecone import Pinecone, ServerlessSpec
+from fastapi import FastAPI, HTTPException, Body
+from fastapi.middleware.cors import CORSMiddleware
+from monitoring.data_handler import InteractionLog
+from monitoring.data_handler import log_agent_interaction
+from monitoring.dashboard import router as dashboard_router
+from monitoring.data_handler import save_ticket as redis_save_ticket
 
 # Load environment variables
 load_dotenv()
@@ -29,6 +37,7 @@ r = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), dec
 
 # FastAPI setup
 app = FastAPI()
+app.include_router(dashboard_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -126,6 +135,17 @@ async def startup_event():
 def cosine_similarity(vec1, vec2):
     return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
 
+def generate_ticket_id():
+    return f"TICKET-{uuid.uuid4().hex.upper()[:8]}"
+
+# async def save_ticket(ticket_data):
+#     try:
+#         await r.set(f"ticket:{ticket_data['ticketId']}", json.dumps(ticket_data))
+#         await r.publish("agent_interactions", json.dumps(ticket_data))
+#     except Exception as e:
+#         logger.error(f"Failed to save ticket: {e}")
+#         raise HTTPException(status_code=500, detail="Ticket storage failed")
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     # Retrieve and update history
@@ -217,7 +237,24 @@ async def chat(req: ChatRequest):
 
     # Handoff logic
     if should_handoff(req.message, reply):
-        ticket_id = "TICKET-12345"  # Replace with actual ticketing logic
+        ticket_id = generate_ticket_id()
+        ticket_data = {
+            "ticketId": ticket_id,
+            "companyId": req.companyId,
+            "sessionId": req.sessionId,
+            "conversation": hist,
+            "timestamp": datetime.now().isoformat(),  # ✅ Matches InteractionLog
+            "status": "IN_PROGRESS",  # ✅ Matches Prisma enum
+            "subject": hist[0]["text"][:100],  # ✅ Required field
+            "priority": 3  # ✅ Required field
+        }
+        try:
+            await log_agent_interaction(InteractionLog(**ticket_data))
+            await redis_save_ticket(ticket_data)
+        except Exception as e:
+            logger.error(f"Handoff failed: {e}")
+            raise HTTPException(status_code=500, detail="Handoff failed")
+        
         return ChatResponse(
             reply=f"I'm escalating you to a human agent. Your ticket is #{ticket_id}.",
             escalated=True,
@@ -239,3 +276,43 @@ async def test_embedding():
     vec = embed_text(test_text)
     res = search_index(vec, companyId="company1", top_k=1)
     return {"embedding_dim": len(vec), "result": res}
+
+@app.post("/resolve-ticket")
+async def resolve_ticket(
+    ticketId: str = Body(...),
+    companyId: str = Body(...)
+):
+    try:
+        ticket_key = f"ticket:{ticketId}"
+        ticket_json = await r.get(ticket_key)
+        
+        if not ticket_json:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Load existing ticket data
+        ticket = json.loads(ticket_json)
+
+        # Update ticket status and resolution time
+        ticket["status"] = "resolved"
+        ticket["resolution_time"] = datetime.now().isoformat()
+
+        # Save updated ticket back to Redis
+        await r.set(ticket_key, json.dumps(ticket))
+
+        return {"status": "success", "message": f"Ticket {ticketId} resolved"}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to resolve ticket: {str(e)}")
+    
+
+@app.post("/feedback")
+async def submit_feedback(ticketId: str = Body(...), score: int = Body(..., ge=1, le=5)):
+    ticket_key = f"ticket:{ticketId}"
+    ticket_json = await r.get(ticket_key)
+    if not ticket_json:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    ticket = json.loads(ticket_json)
+    ticket["csat_score"] = score
+    await r.set(ticket_key, json.dumps(ticket))
+    return {"status": "success", "message": "Feedback recorded"}
