@@ -1,63 +1,32 @@
-// // app/api/company/register/route.ts
-// import { NextRequest } from 'next/server';
-// import prisma from '@/lib/prisma';
-
-// export async function POST(req: NextRequest) {
-//   try {
-//     const body = await req.json();
-
-//     const company = await prisma.company.create({
-//       data: {
-//         name: body.name,
-//         subdomain: body.subdomain,
-//         users: {
-//           create: {
-//             email: body.email,
-//             password: body.password, // In production, hash this
-//             role: 'ADMIN'
-//           }
-//         }
-//       },
-//       include: {
-//         users: true
-//       }
-//     });
-
-//     if (!company) {
-//       return new Response(
-//         JSON.stringify({ error: 'Company creation failed' }),
-//         { status: 500 }
-//       );
-//     }
-
-//     return new Response(
-//       JSON.stringify({ success: true, company }),
-//       { status: 201 }
-//     );
-//   } catch (error) {
-//     console.error('Registration error:', error || 'Unknown error');
-//     return new Response(
-//       JSON.stringify({ error: 'Registration failed' }),
-//       { status: 500 }
-//     );
-//   }
-// }
 // app/api/company/register/route.ts
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import bcrypt from 'bcryptjs';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
     if (!body) {
-      return new Response(JSON.stringify({ error: 'Invalid JSON input' }), { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid JSON input' },
+        { status: 400 }
+      );
     }
 
     const { name, subdomain, email, password } = body;
+    
+    // Step 1: Validate required fields
     if (!name || !subdomain || !email || !password) {
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
     }
 
+    // Step 2: Hash password
+    const hashedPassword = await bcrypt.hash(password, 10); // 10 salt rounds
+
+    // Step 3: Create company + admin user
     const company = await prisma.company.create({
       data: {
         name,
@@ -65,25 +34,30 @@ export async function POST(req: NextRequest) {
         users: {
           create: {
             email,
-            password,
+            password: hashedPassword, // ✅ Use hashed password
             role: 'ADMIN'
           }
         }
       },
       include: {
-        users: true
+        users: { select: { id: true, email: true, role: true } } // ✅ Exclude password
       }
     });
 
-    return new Response(JSON.stringify(company), { status: 201 });
+    return NextResponse.json(company, { status: 201 });
   } catch (error: any) {
-    const errorMessage = error?.message || 'Unknown error';
-    console.error('Registration error:', errorMessage);
-    return new Response(
-      JSON.stringify({ 
-        error: 'Registration failed',
-        details: errorMessage
-      }),
+    console.error('Registration error:', error.message);
+    
+    // Step 4: Handle unique constraint violations
+    if (error.code === 'P2002' && error.meta?.target.includes('subdomain')) {
+      return NextResponse.json(
+        { error: 'Subdomain already taken' },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: 'Registration failed', details: error.message },
       { status: 500 }
     );
   }

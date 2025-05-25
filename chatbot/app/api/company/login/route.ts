@@ -1,36 +1,75 @@
-// import { NextResponse } from 'next/server';
-// import { PrismaClient } from '@prisma/client';
-// import bcrypt from 'bcryptjs';
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import bcrypt from 'bcryptjs';
+import { generateJWT } from '@/lib/jwt';
 
-// const prisma = new PrismaClient();
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { email, password } = body;
 
-// export async function POST(req: Request) {
-//   const { email, password } = await req.json();
+    // Step 1: Validate input
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: 'Email and password required' },
+        { status: 400 }
+      );
+    }
 
-//   try {
-//     const company = await prisma.company.findUnique({
-//       where: { email },
-//     });
+    // Step 2: Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { company: true }
+    });
 
-//     if (!company || !company.passwordHash) {
-//       return NextResponse.json({ message: 'Invalid email or password' }, { status: 401 });
-//     }
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
 
-//     const passwordMatch = await bcrypt.compare(password, company.passwordHash);
+    // Step 3: Compare password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
 
-//     if (!passwordMatch) {
-//       return NextResponse.json({ message: 'Invalid email or password' }, { status: 401 });
-//     }
+    // Step 4: Generate JWT
+    const token = generateJWT({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      companyId: user.companyId
+    });
 
-//     // Exclude sensitive data
-//     return NextResponse.json({
-//       id: company.id,
-//       name: company.name,
-//       email: company.email,
-//       subdomain: company.subdomain,
-//     });
-//   } catch (error) {
-//     console.error('Company login error:', error);
-//     return NextResponse.json({ message: 'Server error' }, { status: 500 });
-//   }
-// }
+    // Step 5: Set JWT in cookie
+    return NextResponse.json(
+      {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          companyId: user.companyId,
+          subdomain: user.company.subdomain
+        }
+      },
+      {
+        status: 200,
+        headers: {
+          'Set-Cookie': `auth_token=${token}; Path=/; Max-Age=${60 * 60 * 24 * 7}; HttpOnly; SameSite=Strict`
+        }
+      }
+    );
+
+  } catch (error: any) {
+    console.error('Login error:', error.message);
+    return NextResponse.json(
+      { error: 'Login failed' },
+      { status: 500 }
+    );
+  }
+}

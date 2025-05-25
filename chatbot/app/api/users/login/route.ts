@@ -1,28 +1,60 @@
 // app/api/user/login/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import  prisma  from '@/lib/prisma';
+import prisma from '@/lib/prisma';
+import bcrypt from 'bcryptjs';
 
 export async function POST(req: NextRequest) {
-  const { email, password } = await req.json();
+  try {
+    const { email, password } = await req.json();
 
-  const user = await prisma.user.findFirst({
-    where: {
-      email,
-      password, // hash this in production!
-      role: 'USER',
-    },
-  });
+    // Step 1: Validate input
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: 'Email and password required' },
+        { status: 400 }
+      );
+    }
 
-  if (!user) {
-    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    // Step 2: Find user by email and role
+    const user = await prisma.user.findUnique({
+      where: {
+        email,
+        role: 'CUSTOMER' // ✅ Use correct role from your schema
+      }
+    });
+
+    // Step 3: Check if user exists
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+
+    // Step 4: Compare password with hash
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+
+    // Step 5: Return sanitized user data (no password)
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        companyId: user.companyId
+      }
+    }, { status: 200 });
+
+  } catch (error: any) {
+    console.error('Login error:', error.message);
+    return NextResponse.json(
+      { error: 'Login failed' },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      companyId: user.companyId,
-    },
-  });
 }

@@ -1,6 +1,6 @@
 // tools/dummy-knowledge.ts
 export const dummyKnowledgeBase = {
-  company1: [
+  techo: [
     {
       id: 'reset-password',
       title: 'How to Reset Password',
@@ -52,7 +52,7 @@ export const dummyKnowledgeBase = {
       content: 'Contact support@company1.com to request a 7-day trial extension.'
     }
   ],
-  company2: [
+  retailo: [
     {
       id: 'shipping-policy',
       title: 'Shipping Policy',

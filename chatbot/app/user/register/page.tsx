@@ -14,7 +14,7 @@ export default function UserSignupPage() {
     e.preventDefault();
 
     try {
-      const res = await fetch('/api/user/signup', {
+      const res = await fetch('/api/users/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, companyId }),
