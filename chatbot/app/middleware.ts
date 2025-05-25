@@ -5,7 +5,13 @@ import { decodeJWT } from '@/lib/jwt';
 export async function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const token = req.cookies.get('auth_token')?.value;
-
+  // Allow analytics route
+  if (url.pathname.startsWith('/agent/analytics')) {
+    if (!token) {
+      return NextResponse.redirect(new URL('/agent/login', req.url));
+    }
+    return NextResponse.next();
+  }
   // Allow static assets
   if (url.pathname.startsWith('/_next') || url.pathname === '/favicon.ico') {
     return NextResponse.next();
