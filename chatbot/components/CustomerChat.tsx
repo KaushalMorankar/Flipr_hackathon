@@ -1,3 +1,4 @@
+// components/CustomerChat.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -11,33 +12,61 @@ interface Message {
   text: string;
 }
 
+interface ChatResponse {
+  reply: string;
+  escalated: boolean;
+  ticketId: string | null;
+  sessionId: string;   // backend can return an updated sessionId
+  error?: string;
+}
+
 export default function CustomerChat({ companyId }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
 
-  // scroll to bottom on new msg
+  // generate or load the sessionId once
+  const [sessionId, setSessionId] = useState<string>("");
+  useEffect(() => {
+    let sid = localStorage.getItem("sessionId");
+    if (!sid) {
+      sid = crypto.randomUUID();
+      localStorage.setItem("sessionId", sid);
+    }
+    setSessionId(sid);
+  }, []);
+
+  const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const send = async () => {
     if (!input.trim()) return;
-    const userMsg = input.trim();
-    setMessages((m) => [...m, { from: "user", text: userMsg }]);
+    const text = input.trim();
+    setMessages((m) => [...m, { from: "user", text }]);
     setInput("");
     setIsSending(true);
 
     try {
-      const res = await fetch("/api/chatbot", {
+      // ⚡ HERE we include both companyId and sessionId in the POST body
+      const res = await fetch("/api/customer/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg, companyId }),
+        body: JSON.stringify({
+          message: text,
+          companyId,
+          sessionId,
+        }),
       });
+      const body: ChatResponse = await res.json();
 
-      const body = await res.json();
       if (res.ok) {
+        // backend could return an updated sessionId
+        if (body.sessionId && body.sessionId !== sessionId) {
+          localStorage.setItem("sessionId", body.sessionId);
+          setSessionId(body.sessionId);
+        }
         setMessages((m) => [...m, { from: "bot", text: body.reply }]);
       } else {
         setMessages((m) => [
@@ -61,7 +90,9 @@ export default function CustomerChat({ companyId }: Props) {
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`flex ${m.from === "bot" ? "justify-start" : "justify-end"}`}
+            className={`flex ${
+              m.from === "bot" ? "justify-start" : "justify-end"
+            }`}
           >
             <div
               className={`px-4 py-2 rounded-lg max-w-xs ${
@@ -76,6 +107,7 @@ export default function CustomerChat({ companyId }: Props) {
         ))}
         <div ref={endRef} />
       </div>
+
       <div className="p-4 border-t flex space-x-2">
         <input
           className="flex-1 border rounded-lg px-3 py-2 focus:outline-none"

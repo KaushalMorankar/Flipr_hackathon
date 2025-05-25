@@ -1,8 +1,10 @@
 fastapi
-uvicorn[standard]
+uvicorn
 python-dotenv
+redis
+requests
 sentence-transformers
-pinecone-client
-transformers
-torch
-numpy
+pinecone>=3.0.0
+uvicorn[standard]
+pyreadline3
+google-generativeai

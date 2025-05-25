@@ -88,7 +88,7 @@ export default function Navbar() {
           {/* Desktop Menu */}
           <div className="hidden md:flex space-x-6 items-center">
             <Link href="/" className="text-gray-700 hover:text-blue-600">Home</Link>
-            <Link href="/chatbot" className="text-gray-700 hover:text-blue-600">Chatbot</Link>
+            <Link href="/customer/chat" className="text-gray-700 hover:text-blue-600">Chatbot</Link>
             {renderAuthOptions()}
           </div>
 
@@ -108,7 +108,7 @@ export default function Navbar() {
       {isOpen && (
         <div className="md:hidden bg-white border-t border-gray-100 px-4 pb-4">
           <Link href="/" className="block py-2 text-gray-700 hover:text-blue-600">Home</Link>
-          <Link href="/chatbot" className="block py-2 text-gray-700 hover:text-blue-600">Chatbot</Link>
+          <Link href="/customer/chat" className="block py-2 text-gray-700 hover:text-blue-600">Chatbot</Link>
           {userEmail ? (
             <>
               <span className="block py-2 text-gray-700">Hi, {userEmail}</span>
