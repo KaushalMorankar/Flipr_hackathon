@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import CustomerChat from "@/components/CustomerChat";
 
 export default function ChatPage() {
-  const [companies, setCompanies] = useState<{ id: string; name: string; subdomain: string; namespace: string }[]>([]);
-  const [selectedNamespace, setSelectedNamespace] = useState<string>('');
+  const [companies, setCompanies] = useState<{ id: string; name: string; subdomain: string }[]>([]);
+  const [selectedSubdomain, setSelectedSubdomain] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -16,7 +16,7 @@ export default function ChatPage() {
         const res = await fetch('/api/company');
         const data = await res.json();
         setCompanies(data);
-        if (data.length > 0) setSelectedNamespace(data[0].namespace);
+        if (data.length > 0) setSelectedSubdomain(data[0].subdomain);
         setLoading(false);
       } catch (err) {
         setError('Failed to load companies');
@@ -52,12 +52,12 @@ export default function ChatPage() {
           </label>
           <select
             id="company-select"
-            value={selectedNamespace}
-            onChange={(e) => setSelectedNamespace(e.target.value)}
+            value={selectedSubdomain}
+            onChange={(e) => setSelectedSubdomain(e.target.value)}
             className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {companies.map((company) => (
-              <option key={company.id} value={company.namespace}>
+              <option key={company.id} value={company.subdomain}>
                 {company.name} ({company.subdomain}.yourapp.com)
               </option>
             ))}
@@ -73,8 +73,8 @@ export default function ChatPage() {
         </header>
 
         <main className="bg-white shadow-lg rounded-lg p-4">
-          {selectedNamespace ? (
-            <CustomerChat companyId={selectedNamespace} />
+          {selectedSubdomain ? (
+            <CustomerChat companyId={selectedSubdomain} />
           ) : (
             <p className="text-center text-gray-500 py-4">
               Please select a company to start chatting.
@@ -85,5 +85,3 @@ export default function ChatPage() {
     </div>
   );
 }
-
-// Note: Ensure your /api/company response includes a `namespace` property matching your Pinecone namespaces.
