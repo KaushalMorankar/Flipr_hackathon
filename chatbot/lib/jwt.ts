@@ -15,14 +15,22 @@ export function decodeJWT(token: string) {
   }
 }
 
+// lib/jwt.ts
 export function generateJWT(user: {
   id: string;
   email: string;
   role: string;
   companyId: string;
+  subdomain: string;
 }) {
   return sign(
-    { id: user.id, email: user.email, role: user.role, companyId: user.companyId },
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      companyId: user.companyId,
+      subdomain: user.subdomain // ✅ Now available
+    },
     process.env.JWT_SECRET!,
     { expiresIn: '1d' }
   );

@@ -1,7 +1,6 @@
 // app/api/pinecone/suggestions/route.ts
 import { NextRequest } from 'next/server';
 import { decodeJWT } from '@/lib/jwt';
-
 export async function POST(req: NextRequest) {
   const token = req.cookies.get('auth_token')?.value;
   if (!token) {

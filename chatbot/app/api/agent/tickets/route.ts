@@ -1,10 +1,12 @@
 // app/api/agent/tickets/route.ts
 import { NextRequest } from 'next/server';
 import { decodeJWT } from '@/lib/jwt';
-
+import prisma from '@/lib/prisma';
 export async function GET(req: NextRequest) {
   const token = req.cookies.get('auth_token')?.value;
-  if (!token) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+  }
 
   const decoded = decodeJWT(token);
   if (!decoded || decoded.role !== 'AGENT') {

@@ -3,11 +3,13 @@ import { NextRequest } from 'next/server';
 import { compare } from 'bcryptjs';
 import { generateJWT } from '@/lib/jwt';
 import prisma from '@/lib/prisma';
-
+import { NextResponse } from 'next/server';
 export async function POST(req: NextRequest) {
   const { email, password } = await req.json();
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ where: { email },
+  include: { company: true } // ✅ Make sure this is included
+  });
   const isPasswordValid = await compare(password, user?.password || '');
 
   if (!user || !isPasswordValid) {
@@ -16,10 +18,21 @@ export async function POST(req: NextRequest) {
 
   const token = generateJWT(user);
 
-  return new Response(JSON.stringify({ token }), {
+  return NextResponse.json(
+  {
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      companyId: user.companyId,
+      subdomain: user.company.subdomain // ✅ Add this
+    }
+  },
+  {
     status: 200,
     headers: {
       'Set-Cookie': `auth_token=${token}; Path=/; Max-Age=${60 * 60 * 24 * 7}; SameSite=Strict`
     }
-  });
+  }
+);
 }
