@@ -1,58 +1,63 @@
-// /app/[subdomain]/dashboard/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
-
-// Components
 import MetricsCard from "@/components/MetricsCard";
 import QAAlerts from "@/components/QAAlerts";
 import CoachingRecommendations from "@/components/CoachingRecommendations";
 import ConversationViewer from "@/components/ConversationViewer";
-
-// Types
-import type { Ticket, DashboardData } from "@/types"; // Update path as needed
+import type { Ticket, DashboardData } from "@/types";
 
 export default function Dashboard() {
+  const router = useRouter();
   const params = useParams();
   const subdomain = Array.isArray(params?.subdomain)
     ? params.subdomain[0]
-    : (params?.subdomain as string | undefined) || "flipr";
+    : (params?.subdomain as string) || "flipr";
 
-  const [company, setCompany] = useState<{ name: string; subdomain: string; email: string; role: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
 
   useEffect(() => {
-  async function fetchData() {
-    if (!subdomain) return;
-    try {
-      const res = await axios.get(`/api/dashboard?path=${subdomain}`); // ✅ Backticks added
-      const data: DashboardData = res.data;
-      console.log(data,res);
-      setDashboardData(data);
-      setCompany({
-        name: `${subdomain} Inc.`, // ✅ Backticks added
-        subdomain,
-        email: `${subdomain}@gmail.com`,
-        role: "Admin",
-      });
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-    } finally {
-      setLoading(false);
+    async function fetchData() {
+      if (!subdomain) return;
+      try {
+        const res = await axios.get<DashboardData>(`/api/dashboard?path=${subdomain}`);
+        setDashboardData(res.data);
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err);
+      } finally {
+        setLoading(false);
+      }
     }
+    fetchData();
+  }, [subdomain]);
+
+  async function handleResolve() {
+  if (!selectedTicket || !dashboardData) return;
+
+  // You could pop up a prompt/modal to collect a note
+  const note = prompt("Admin note (optional):", "");
+
+  try {
+    await axios.post("/api/resolve-admin", {
+      ticketId: selectedTicket,
+      note,       // may be empty or undefined
+    });
+    // Refresh the dashboard so the updatedAt, status, and conversation  
+    // (with the new message) come back from /api/dashboard
+    router.refresh();
+  } catch (err) {
+    console.error("Failed to resolve ticket:", err);
+    alert("Could not resolve ticket");
   }
-  fetchData();
-}, [subdomain]);
+}
+
 
   if (loading) return <div className="p-6">Loading dashboard...</div>;
-  if (!dashboardData) {
-    return <div className="p-6 text-red-500">Failed to load dashboard data</div>;
-  }
+  if (!dashboardData) return <div className="p-6 text-red-500">Failed to load dashboard data</div>;
 
   const { metrics, tickets, qa_summary, feedback_recommendations } = dashboardData;
 
@@ -61,65 +66,51 @@ export default function Dashboard() {
       {/* Header */}
       <div className="bg-white shadow rounded-lg p-6 mb-6">
         <h1 className="text-2xl font-semibold text-gray-800">
-          Welcome, <span className="text-blue-600">{company?.name}</span>
+          Welcome, <span className="text-blue-600">{subdomain} Inc.</span>
         </h1>
         <p className="text-sm text-gray-600 mt-1">Monitor agent performance and improve support quality</p>
       </div>
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <MetricsCard
-          title="Avg Handling Time"
-          value={`${metrics?.aht?.toFixed(1)}s`}
-          description="Average time taken to resolve a ticket"
-        />
+        <MetricsCard title="Avg Handling Time" value={`${metrics?.aht.toFixed(1)}s`} description="Average time to resolve" />
         <MetricsCard
           title="First Call Resolution"
-          value={`${(metrics?.fcr * 100).toFixed(1)}%`}
-          description="Percentage of tickets resolved on first interaction"
+          value={metrics?.fcr ? `${(metrics.fcr * 100).toFixed(1)}%` : "N/A"}
+          description="Tickets resolved first interaction"
         />
-        <MetricsCard
-          title="CSAT Score"
-          value={metrics?.csat_score || "N/A"}
-          description="Customer satisfaction score (1-5)"
-        />
+        <MetricsCard title="CSAT Score" value={metrics?.csat_score?.toString() || "N/A"} description="Customer satisfaction" />
       </div>
 
       {/* QA Alerts & Coaching */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <QAAlerts violations={qa_summary?.policy_violations || []} />
-        <CoachingRecommendations recommendations={feedback_recommendations || []} />
+        <QAAlerts violations={qa_summary.policy_violations} />
+        <CoachingRecommendations recommendations={feedback_recommendations} />
       </div>
 
       {/* Recent Tickets */}
       <div className="bg-white shadow rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">Recent Tickets</h2>
         <div className="space-y-4">
-          {tickets.map((ticket: Ticket) => (
+          {tickets.map((t: Ticket) => (
             <div
-              key={ticket.id}
+              key={t.id}
               className={`p-4 border rounded cursor-pointer transition ${
-                selectedTicket === ticket.id
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-gray-200"
+                selectedTicket === t.id ? "border-blue-500 bg-blue-50" : "border-gray-200"
               }`}
-              onClick={() => setSelectedTicket(ticket.id)}
+              onClick={() => setSelectedTicket(t.id)}
             >
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="font-medium text-gray-800">{ticket.subject}</p>
-                  <p className="text-sm text-gray-500">
-                    {new Date(ticket.timestamp).toLocaleString()}
-                  </p>
+                  <p className="font-medium text-gray-800">{t.subject}</p>
+                  <p className="text-sm text-gray-500">{new Date(t.timestamp).toLocaleString()}</p>
                 </div>
                 <span
                   className={`px-2 py-1 text-xs rounded-full ${
-                    ticket.status === "resolved"
-                      ? "bg-green-100 text-green-800"
-                      : "bg-yellow-100 text-yellow-800"
+                    t.status === "RESOLVED" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
                   }`}
                 >
-                  {ticket.status}
+                  {t.status}
                 </span>
               </div>
             </div>
@@ -127,13 +118,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Conversation Viewer */}
+      {/* Conversation + Resolve Button */}
       {selectedTicket && (
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Conversation History</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Conversation History</h2>
+            <button
+  onClick={handleResolve}
+  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+>
+  Resolve Ticket
+</button>
+
+          </div>
           <ConversationViewer
             conversation={
-              tickets.find((t: Ticket) => t.id === selectedTicket)?.conversation || []
+              tickets.find(t => t.id === selectedTicket)?.conversation || []
             }
           />
         </div>

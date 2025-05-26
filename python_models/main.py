@@ -157,8 +157,9 @@ async def chat(req: ChatRequest):
     emb = embed_text(req.message)
 
     # Query Pinecone
+    print(req.companyId)
     docs = search_index(emb, req.companyId, top_k=3)
-
+    print(docs)
     # Build context
     context_block = ""
     if not docs:
@@ -293,7 +294,7 @@ async def resolve_ticket(
         ticket = json.loads(ticket_json)
 
         # Update ticket status and resolution time
-        ticket["status"] = "resolved"
+        ticket["status"] = "RESOLVED"
         ticket["resolution_time"] = datetime.now().isoformat()
 
         # Save updated ticket back to Redis

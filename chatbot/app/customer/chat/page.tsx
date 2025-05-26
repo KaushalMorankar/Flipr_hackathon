@@ -1,15 +1,14 @@
-// app/customer/chat/page.tsx
-'use client';
+"use client";
 import { useState, useEffect } from 'react';
 import CustomerChat from "@/components/CustomerChat";
+import { ChevronDown, Loader2 } from 'lucide-react';
 
 export default function ChatPage() {
   const [companies, setCompanies] = useState<{ id: string; name: string; subdomain: string }[]>([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [selectedSubdomain, setSelectedSubdomain] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Fetch all companies
   useEffect(() => {
     const fetchCompanies = async () => {
       try {
@@ -18,9 +17,9 @@ export default function ChatPage() {
         
         const data = await res.json();
         setCompanies(data);
-        
+
         if (data.length > 0) {
-          setSelectedCompanyId(data[0].id); // ✅ Use dynamic company ID
+          setSelectedSubdomain(data[0].subdomain);
         }
       } catch (err) {
         setError('Failed to load companies');
@@ -28,65 +27,82 @@ export default function ChatPage() {
         setLoading(false);
       }
     };
-    
+
     fetchCompanies();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <p>Loading companies...</p>
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50">
+      <div className="flex items-center gap-2 text-blue-600">
+        <Loader2 className="h-6 w-6 animate-spin" />
+        <span className="text-lg font-medium">Loading companies...</span>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (error) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <p className="text-red-500">{error}</p>
+  if (error) return (
+    <div className="min-h-screen flex items-center justify-center bg-red-50">
+      <div className="text-center p-8 max-w-md">
+        <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-red-100 flex items-center justify-center">
+          <span className="text-red-600 text-xl">!</span>
+        </div>
+        <h2 className="text-xl font-semibold text-red-800 mb-2">Loading Error</h2>
+        <p className="text-red-600">{error}</p>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Company Selection */}
-        <div className="mb-6">
-          <label htmlFor="company-select" className="block text-sm font-medium text-gray-700 mb-2">
-            Select Company
-          </label>
-          <select
-            id="company-select"
-            value={selectedCompanyId || ''}
-            onChange={(e) => setSelectedCompanyId(e.target.value)}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name} ({company.subdomain}.yourapp.com)
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Chat Interface */}
-        <header className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-blue-600">💬 Customer Support</h1>
-          <p className="text-gray-600 mt-2">
-            Ask us anything — we're here to help!
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-8">
+      <div className="max-w-4xl mx-auto space-y-8">
+        <header className="text-center space-y-4">
+          <h1 className="text-4xl font-bold text-gray-900 bg-clip-text">
+            Customer Support Portal
+          </h1>
+          <p className="text-gray-600 text-lg">
+            Select your organization and get instant assistance
           </p>
         </header>
 
-        <main className="bg-white shadow-lg rounded-lg p-4">
-          {selectedCompanyId ? (
-            <CustomerChat companyId={selectedCompanyId} />
-          ) : (
-            <p className="text-center text-gray-500 py-4">
-              Please select a company to start chatting.
-            </p>
-          )}
-        </main>
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select your organization
+              </label>
+              <div className="relative">
+                <select
+                  className="w-full pl-4 pr-10 py-3 border border-gray-300 rounded-lg appearance-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors"
+                  value={selectedSubdomain}
+                  onChange={e => setSelectedSubdomain(e.target.value)}
+                >
+                  {companies.map(c => (
+                    <option key={c.id} value={c.subdomain}>
+                      {c.name} ({c.subdomain}.yourapp.com)
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                  <ChevronDown className="h-5 w-5 text-gray-400" />
+                </div>
+              </div>
+            </div>
+
+            {selectedSubdomain ? (
+              <div className="border-t border-gray-200 pt-6">
+                <CustomerChat companyId={selectedSubdomain} />
+              </div>
+            ) : (
+              <div className="h-48 flex items-center justify-center text-gray-500">
+                <p>Select an organization to start chatting</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <footer className="text-center text-sm text-gray-500">
+          <p>24/7 support • Instant responses • Secure communication</p>
+        </footer>
       </div>
     </div>
   );

@@ -49,7 +49,7 @@ export default function CustomerChat({ companyId }: { companyId: string }) {
       content: message
     }, {
       role: 'assistant',
-      content: data.response
+      content: data.reply
     }]);
     setMessage('');
   };

@@ -1,62 +1,69 @@
 // app/api/tickets/route.ts
+
 import { NextRequest } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import  prisma  from '@/lib/prisma';
+import { GoogleGenerativeAI, Part } from '@google/generative-ai';
+import prisma from '@/lib/prisma';
 import { Pinecone } from '@pinecone-database/pinecone';
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { message, subdomain } = body;
+    const { message, subdomain } = await req.json();
 
-    // Step 1: Get company by subdomain
+    // 1) Lookup company and its users
     const company = await prisma.company.findUnique({
       where: { subdomain },
       include: { users: true }
     });
-
     if (!company) {
-      return new Response(JSON.stringify({ error: 'Company not found' }), { status: 404 });
+      return new Response(
+        JSON.stringify({ error: 'Company not found' }),
+        { status: 404 }
+      );
     }
 
-    // Step 2: Classify ticket with Gemini
+    // 2) Classify the ticket using Gemini
     const classificationModel = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    const result = await classificationModel.generateContent({
+    const classificationResult = await classificationModel.generateContent({
       contents: [{
         role: 'user',
-        parts: [{ text: `Classify this ticket:\n"${message}"\n\nReturn JSON: {category: "billing|technical|account|shipping", priority: 1-5}` }]
+        parts: [{
+          text: `Classify this ticket:\n"${message}"\n\n`
+            + `Return JSON: {category: "billing|technical|account|shipping", priority: 1-5}`
+        }]
       }],
       generationConfig: { responseMimeType: 'application/json' }
     });
+    const classification = JSON.parse(
+      classificationResult.response.text() || '{}'
+    ) as { category?: string; priority?: number };
 
-    const classification = JSON.parse(result.response.text() || '{}');
-    
-    // Step 3: Create ticket
+    // 3) Create the ticket (with the user’s initial message)
     const ticket = await prisma.ticket.create({
       data: {
         companyId: company.id,
         subject: message.slice(0, 100),
         status: 'OPEN',
-        priority: classification.priority || 3,
+        priority: classification.priority ?? 3,
         messages: {
           create: {
             content: message,
             role: 'user',
-            embedding: [] // Will be updated later
+            embedding: []
           }
         }
       },
       include: { messages: true }
     });
 
-    // Step 4: Generate embedding for the message
+    // 4) Generate an embedding for that message
     const embeddingModel = genAI.getGenerativeModel({ model: 'embedding-001' });
-    const embeddingResult = await embeddingModel.embedContent({
-      content: { text: message }
-    });
+    // — either of these two calls is valid:
+    // const embeddingResult = await embeddingModel.embedContent(message);
+    const embeddingResult = await embeddingModel.embedContent({ content: message });
 
-    // Step 5: Update message with embedding
+    // 5) Update the newly created message with its embedding
     await prisma.ticketMessage.update({
       where: { id: ticket.messages[0].id },
       data: {
@@ -64,54 +71,75 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // Step 6: Assign agent
-    const agent = await assignTicketToAgent(ticket.id, company.id);
-    
-    // Step 7: Run automation
+    // 6) Assign it to the least-burdened agent
+    const agentUpdate = await assignTicketToAgent(ticket.id, company.id);
+
+    // 7) Run any simple automations (e.g., password-reset)
     const automationResult = await runAutomation(ticket.id, message, company.id);
 
-    return new Response(JSON.stringify({
-      ticket,
-      agent,
-      automation: automationResult
-    }), { status: 201 });
+    return new Response(
+      JSON.stringify({
+        ticket,
+        agent: agentUpdate,
+        automation: automationResult
+      }),
+      { status: 201 }
+    );
   } catch (error) {
     console.error('Ticket creation error:', error);
-    return new Response(JSON.stringify({ error: 'Failed to create ticket' }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: 'Failed to create ticket' }),
+      { status: 500 }
+    );
   }
 }
 
+// -----------------------
 // Agent assignment logic
-async function assignTicketToAgent(ticketId: string, companyId: string) {
+// -----------------------
+async function assignTicketToAgent(
+  ticketId: string,
+  companyId: string
+) {
+  type AgentWithTickets = { id: string; tickets: { id: string }[] };
+
   const agents = await prisma.user.findMany({
     where: { companyId, role: 'AGENT' },
-    include: {
-      tickets: { where: { status: 'IN_PROGRESS' } }
-    }
+    include: { tickets: { where: { status: 'IN_PROGRESS' } } }
   });
 
-  const agent = agents.sort((a, b) => a.tickets.length - b.tickets.length)[0];
+  const leastBusy = agents.sort(
+    (a: AgentWithTickets, b: AgentWithTickets) =>
+      a.tickets.length - b.tickets.length
+  )[0];
 
-  if (agent) {
-    return prisma.ticket.update({
-      where: { id: ticketId },
-      data: {
-        status: 'IN_PROGRESS',
-        agentId: agent.id
-      }
-    });
-  }
+  if (!leastBusy) return null;
 
-  return null;
+  return prisma.ticket.update({
+    where: { id: ticketId },
+    data: {
+      status: 'IN_PROGRESS',
+      agentId: leastBusy.id
+    }
+  });
 }
 
+// -----------------------
 // Automation logic
-export async function runAutomation(ticketId: string, message: string, companyId: string): Promise<{ resolved: boolean, reason?: string }> {
+// -----------------------
+export async function runAutomation(
+  ticketId: string,
+  message: string,
+  companyId: string
+): Promise<{ resolved: boolean; reason?: string }> {
   const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
   const index = pinecone.Index(process.env.PINECONE_INDEX_NAME!);
 
-  // Example: Password reset
-  if (message.includes('password') || message.includes('reset')) {
+  // e.g. auto-resolve password-reset requests
+  if (
+    message.toLowerCase().includes('password')
+    || message.toLowerCase().includes('reset')
+  ) {
     await prisma.ticket.update({
       where: { id: ticketId },
       data: {
@@ -124,9 +152,10 @@ export async function runAutomation(ticketId: string, message: string, companyId
         }
       }
     });
-
     return { resolved: true, reason: 'Password reset' };
   }
+
+  // add more automations here…
 
   return { resolved: false };
 }

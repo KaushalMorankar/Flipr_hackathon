@@ -7,20 +7,20 @@ export interface Message {
 export interface Ticket {
   id: string;
   subject: string;
-  status: "resolved" | "pending";
+  status: "OPEN" | "RESOLVED";
   timestamp: string;
+  resolution_time?: string;
   conversation: Message[];
 }
 
 export interface DashboardData {
-  metrics: {
+  companyId: string;
+  metrics?: {
     aht: number;
     fcr: number;
-    csat_score: number | "N/A";
+    csat_score: number;
   };
   tickets: Ticket[];
-  qa_summary: {
-    policy_violations: string[];
-  };
+  qa_summary: { policy_violations: string[] };
   feedback_recommendations: string[];
 }

@@ -7,7 +7,7 @@ from sklearn.cluster import KMeans
 
 # /monitoring/metrics.py
 def calculate_aht(tickets: list) -> float:
-    resolved_tickets = [t for t in tickets if t.get("status") == "resolved" and t.get("resolution_time")]
+    resolved_tickets = [t for t in tickets if t.get("status") == "RESOLVED" and t.get("resolution_time")]
     if not resolved_tickets:
         return 0
     total_time = sum(

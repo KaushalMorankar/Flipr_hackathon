@@ -1,7 +1,7 @@
 // app/api/company/[subdomain]/knowledge/route.ts
 import { NextRequest } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { GoogleGenerativeAI } from "google-generative-ai";
+import prisma  from '@/lib/prisma';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 

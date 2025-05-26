@@ -45,6 +45,6 @@ async def resolve_ticket(ticket_id: str):
             where={"id": ticket_id},
             data={"status": "RESOLVED"}
         )
-        return {"status": "resolved", "ticketId": ticket_id}
+        return {"status": "RESOLVED", "ticketId": ticket_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to resolve ticket")

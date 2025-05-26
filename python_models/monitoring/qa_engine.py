@@ -22,9 +22,13 @@ def check_politeness(text: str) -> float:
     return TextBlob(text).sentiment.polarity
 
 def check_resolution_effectiveness(ticket: dict) -> str:
-    if ticket.get("status") == "resolved" and ticket.get("csat_score", 0) >= 4:
+    status = ticket.get("status")
+    raw_score = ticket.get("csat_score")
+    csat = raw_score if raw_score is not None else 0
+
+    if status == "RESOLVED" and csat >= 4:
         return "Effective"
-    elif ticket.get("status") == "resolved" and ticket.get("csat_score", 0) < 3:
+    elif status == "RESOLVED" and csat < 3:
         return "Needs Improvement"
     else:
         return "Pending"
