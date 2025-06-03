@@ -17,7 +17,7 @@ from monitoring.data_handler import InteractionLog
 from monitoring.data_handler import log_agent_interaction
 from monitoring.dashboard import router as dashboard_router
 from monitoring.data_handler import save_ticket as redis_save_ticket
-
+import requests
 # Load environment variables
 load_dotenv()
 
@@ -118,7 +118,20 @@ async def get_history(sessionId: str) -> list[dict]:
 
 async def save_history(sessionId: str, history: list[dict]) -> None:
     await r.set(f"hist:{sessionId}", repr(history), ex=3600 * 24)
+# backend/app.py
+def get_subdomain(company_id):
+    url = f"http://host.docker.internal:3000/api/{company_id}"
+    res = requests.get(url)
 
+    if res.status_code != 200:
+        print("Failed to fetch subdomain:", res.text)
+        return None
+
+    try:
+        return res.json().get('subdomain')
+    except Exception:
+        print("Invalid JSON response:", res.text)
+        return None
 def should_handoff(user_msg: str, bot_reply: str) -> bool:
     triggers = ["human", "agent", "ticket", "escalate", "help from a person"]
     combined = (user_msg + " " + bot_reply).lower()
@@ -157,8 +170,19 @@ async def chat(req: ChatRequest):
     emb = embed_text(req.message)
 
     # Query Pinecone
+    # print(req)
+    # Fetch subdomain from Next.js API
+    # res = requests.get(f"http://localhost:3000/api/{req.companyId}")
+    # if res.status_code == 200:
+    #     return res.json().get('subdomain')
+    # else:
+    #     print("Failed to get subdomain:", res.text)
+    #     # return None
     print(req.companyId)
-    docs = search_index(emb, req.companyId, top_k=3)
+    # # print(res.subdoamin)
+    subdomain=get_subdomain(req.companyId)
+    # docs = search_index(emb, req.companyId, top_k=3)
+    docs = search_index(emb, subdomain, top_k=3)
     print(docs)
     # Build context
     context_block = ""
