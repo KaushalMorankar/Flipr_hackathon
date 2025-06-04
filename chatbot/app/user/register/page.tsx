@@ -14,7 +14,7 @@ export default function UserSignupPage() {
     e.preventDefault();
 
     try {
-      const res = await fetch('/api/users/register', {
+      const res = await fetch('/api/user/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, companyId }),
@@ -27,8 +27,11 @@ export default function UserSignupPage() {
         return;
       }
 
+      // Save user data to localStorage
       localStorage.setItem('flipr_user', JSON.stringify(data.user));
-      router.push('/chatbot');
+
+      // Redirect to user dashboard
+      router.push('/customer/dashboard');
     } catch (err) {
       console.error(err);
       setError('Something went wrong');

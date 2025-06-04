@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL;
 
   if (!PYTHON_BACKEND_URL) {
-    console.error('PYTHON_BACKEND_URL not set');
+    console.log('PYTHON_BACKEND_URL not set');
     return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500 });
   }
 

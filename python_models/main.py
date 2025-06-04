@@ -10,6 +10,7 @@ from typing import List, Dict
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import google.generativeai as genai
+from typing_extensions import Literal  
 from pinecone import Pinecone, ServerlessSpec
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +18,7 @@ from monitoring.data_handler import InteractionLog
 from monitoring.data_handler import log_agent_interaction
 from monitoring.dashboard import router as dashboard_router
 from monitoring.data_handler import save_ticket as redis_save_ticket
-
+import requests
 # Load environment variables
 load_dotenv()
 
@@ -56,6 +57,23 @@ class ChatResponse(BaseModel):
     reply: str
     escalated: bool = False
     ticketId: str | None = None
+
+# ——— Models ———
+class AssistMessage(BaseModel):
+    # accept lowercase literals
+    role: Literal["user", "agent"]
+    # match the field name your client is sending
+    text: str
+    # ignore any extra keys (timestamp, etc.)
+    class Config:
+        extra = "ignore"
+
+class AssistRequest(BaseModel):
+    ticketId: str
+    messages: List[AssistMessage]
+
+class AssistResponse(BaseModel):
+    suggestion: str
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
 def embed_text(text: str) -> list[float]:
@@ -118,7 +136,20 @@ async def get_history(sessionId: str) -> list[dict]:
 
 async def save_history(sessionId: str, history: list[dict]) -> None:
     await r.set(f"hist:{sessionId}", repr(history), ex=3600 * 24)
+# backend/app.py
+def get_subdomain(company_id):
+    url = f"http://host.docker.internal:3000/api/{company_id}"
+    res = requests.get(url)
 
+    if res.status_code != 200:
+        print("Failed to fetch subdomain:", res.text)
+        return None
+
+    try:
+        return res.json().get('subdomain')
+    except Exception:
+        print("Invalid JSON response:", res.text)
+        return None
 def should_handoff(user_msg: str, bot_reply: str) -> bool:
     triggers = ["human", "agent", "ticket", "escalate", "help from a person"]
     combined = (user_msg + " " + bot_reply).lower()
@@ -157,8 +188,19 @@ async def chat(req: ChatRequest):
     emb = embed_text(req.message)
 
     # Query Pinecone
+    # print(req)
+    # Fetch subdomain from Next.js API
+    # res = requests.get(f"http://localhost:3000/api/{req.companyId}")
+    # if res.status_code == 200:
+    #     return res.json().get('subdomain')
+    # else:
+    #     print("Failed to get subdomain:", res.text)
+    #     # return None
     print(req.companyId)
-    docs = search_index(emb, req.companyId, top_k=3)
+    # # print(res.subdoamin)
+    subdomain=get_subdomain(req.companyId)
+    # docs = search_index(emb, req.companyId, top_k=3)
+    docs = search_index(emb, subdomain, top_k=3)
     print(docs)
     # Build context
     context_block = ""
@@ -277,6 +319,85 @@ async def test_embedding():
     vec = embed_text(test_text)
     res = search_index(vec, companyId="company1", top_k=1)
     return {"embedding_dim": len(vec), "result": res}
+
+
+@app.post("/assist-agent", response_model=AssistResponse)
+async def assist_agent(req: AssistRequest):
+    ticket_id = req.ticketId
+    msgs = req.messages
+
+    # 1) build one big USER blob
+    user_texts = [m.content.strip() for m in msgs if m.role == "USER"]
+    full_blob = "\n".join(user_texts)
+
+    # 2) chunk into ~800-word pieces
+    paras = full_blob.split("\n")
+    chunks, buf = [], ""
+    for p in paras:
+        if len((buf + " " + p).split()) > 800:
+            chunks.append(buf)
+            buf = p
+        else:
+            buf = (buf + "\n" + p).strip()
+    if buf:
+        chunks.append(buf)
+
+    # 3) index each chunk using the global pine_idx
+    for idx, c in enumerate(chunks):
+        c = c.strip()
+        if not c:
+            continue  # ⛔ Skip empty chunks
+        vec = embed_text(c)
+        pine_idx.upsert(
+            vectors=[{
+                "id": f"{ticket_id}::{idx}",
+                "values": vec,
+                "metadata": {"text": c}
+            }],
+            namespace=ticket_id
+        )
+
+    # 4) now do a semantic search for the full_blob
+    if not full_blob.strip():
+        raise HTTPException(status_code=200, detail="No valid user messages to process.")
+
+    query_vec = embed_text(full_blob)
+    results = search_index(query_vec, ticket_id, top_k=3)
+
+    # 5) build context
+    if results:
+        context = "\n".join(f"— {r['title'] or r['docId']}: {r['content']}" for r in results)
+    else:
+        last3 = user_texts[-3:]
+        context = "\n".join(f"— Customer said: {t}" for t in last3) or "No context found."
+
+    # 6) assemble prompt
+    prompt = f"""
+You are a support coach. Given these snippets and the full transcript,
+provide (1) a 2-3 sentence summary of the customer's issue and
+(2) a concise resolution message the agent can send.
+
+--- SNIPPETS ---
+{context}
+
+--- FULL TRANSCRIPT ---
+{chr(10).join(f"{m.role}: {m.content}" for m in msgs)}
+
+--- RESPONSE:
+""".strip()
+
+    # 7) call Gemini
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        resp = model.generate_content(prompt)
+        suggestion = resp.text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini generation failed: {e}")
+
+    return AssistResponse(suggestion=suggestion)
+
+
+
 
 @app.post("/resolve-ticket")
 async def resolve_ticket(

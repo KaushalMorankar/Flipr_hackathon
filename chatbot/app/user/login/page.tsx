@@ -29,8 +29,8 @@ export default function UserLoginPage() {
       // Save user data to localStorage
       localStorage.setItem('flipr_user', JSON.stringify(data.user));
 
-      // Redirect to chatbot
-      router.push('/chatbot');
+      // Redirect to user dashboard
+      router.push('/customer/dashboard');
     } catch (err) {
       console.error(err);
       setError('Something went wrong');

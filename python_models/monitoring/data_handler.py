@@ -60,7 +60,7 @@ async def save_ticket(ticket_data: dict[str, Any]):
         await r.publish("agent_interactions", json.dumps(ticket_dict))
         
         # Sync to Prisma
-        PRISMA_SYNC_URL = os.getenv("PRISMA_SYNC_URL", "http://localhost:3000/api/prisma-sync")
+        PRISMA_SYNC_URL = os.getenv("PRISMA_SYNC_URL", "http://localhost:3000/api/customer/escalate")
         
         async with httpx.AsyncClient() as client:
             response = await client.post(

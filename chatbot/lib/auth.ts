@@ -1,6 +1,25 @@
 // lib/jwt.ts
 import { sign, verify } from 'jsonwebtoken';
 
+import { cookies } from 'next/headers';
+
+export async function getUserEmailFromCookie(): Promise<string | null> {
+  const cookieStore = await cookies(); // ✅ await it!
+  const token = cookieStore.get('auth_token')?.value;
+
+  if (!token) return null;
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(token.split('.')[1], 'base64').toString()
+    );
+    return payload.email;
+  } catch {
+    return null;
+  }
+}
+
+
 export function generateJWT(user: {
   id: string;
   email: string;

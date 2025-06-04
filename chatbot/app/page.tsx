@@ -4,9 +4,9 @@ import Link from 'next/link';
 
 export default function Dashboard() {
   const company = {
-    name: 'flipr Inc.',
-    subdomain: 'flipr',
-    email: 'flipr@gmail.com'
+    name: 'djwala Inc.',
+    subdomain: 'djwala',
+    email: 'djwala@gmail.com'
   };
 
   return (
@@ -25,7 +25,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-4 shadow rounded-lg">
           <h3 className="text-sm text-gray-600">Company Subdomain</h3>
-          <p className="text-lg font-medium text-gray-800">{company.subdomain}.fliprbot.com</p>
+          <p className="text-lg font-medium text-gray-800">{company.subdomain}.djwalabot.com</p>
         </div>
         <div className="bg-white p-4 shadow rounded-lg">
           <h3 className="text-sm text-gray-600">Registered Email</h3>
@@ -111,7 +111,7 @@ export default function Dashboard() {
 //       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
 //         <div className="bg-white p-4 shadow rounded-lg">
 //           <h3 className="text-sm text-gray-600">Company Subdomain</h3>
-//           <p className="text-lg font-medium text-gray-800">{company.subdomain}.fliprbot.com</p>
+//           <p className="text-lg font-medium text-gray-800">{company.subdomain}.djwalabot.com</p>
 //         </div>
 //         <div className="bg-white p-4 shadow rounded-lg">
 //           <h3 className="text-sm text-gray-600">Registered Email</h3>
