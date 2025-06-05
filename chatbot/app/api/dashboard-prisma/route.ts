@@ -44,7 +44,8 @@ export async function GET(req: NextRequest) {
                          text:      m.content,
                          timestamp: m.createdAt.toISOString(), 
                        })),
-      csat_score:      t.csat_score
+      csat_score:      t.csat_score,
+      feedback:        t.feedback
     })
   );
 
