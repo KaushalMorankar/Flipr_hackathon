@@ -49,6 +49,7 @@ model Ticket {
   agent       User?     @relation("AgentTickets", fields: [agentId], references: [id])
   agentId     String?
   feedback    String?   // ← Add this line if you want to store feedback
+  csat_score    Int?
 }
 
 enum TicketStatus {

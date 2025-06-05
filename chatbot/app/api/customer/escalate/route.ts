@@ -9,6 +9,7 @@ export async function POST(req: NextRequest) {
     const company = await prisma.company.findUnique({
       where: { id: companyId }
     });
+    console.log(company);
     if (!companyId || !message) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),

@@ -138,7 +138,7 @@ async def save_history(sessionId: str, history: list[dict]) -> None:
     await r.set(f"hist:{sessionId}", repr(history), ex=3600 * 24)
 # backend/app.py
 def get_subdomain(company_id):
-    url = f"http://host.docker.internal:3000/api/{company_id}"
+    url = f"http://localhost:3000/api/{company_id}"
     res = requests.get(url)
 
     if res.status_code != 200:

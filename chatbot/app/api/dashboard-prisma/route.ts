@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
                          role:      m.role.toLowerCase(),
                          text:      m.content,
                          timestamp: m.createdAt.toISOString(), 
-                       }))
+                       })),
+      csat_score:      t.csat_score
     })
   );
 

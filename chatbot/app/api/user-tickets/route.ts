@@ -16,7 +16,7 @@ interface ShapedTicket {
   status: string;
   timestamp: string;
   resolution_time: string | null;
-//   csat_score: number | null;
+  csat_score: number | null;
 //   fcr: boolean;
   conversation: ShapedMessage[];
 }
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       status: t.status,
       timestamp: t.createdAt.toISOString(),
       resolution_time: t.updatedAt?.toISOString() ?? null,
-    //   csat_score: t.csatScore ?? null,
+      csat_score: t.csat_score ?? null,
     //   fcr: t.firstCallResolution,
       conversation: t.messages.map(
         (m: PrismaMessage): ShapedMessage => ({

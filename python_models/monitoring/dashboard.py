@@ -1,116 +1,15 @@
-# # /monitoring/dashboard.py
-# from fastapi import APIRouter, Depends, HTTPException
-# from typing import List
-# import numpy as np
-# from datetime import datetime
-# from monitoring.data_handler import get_company_tickets
-# from monitoring.metrics import calculate_aht, calculate_fcr, calculate_avg_csat
-# from monitoring.qa_engine import analyze_conversation
-# from monitoring.feedback import identify_gaps, generate_coaching_plan
-
-# router = APIRouter(prefix="/dashboard")
-
-# # /monitoring/dashboard.py
-# @router.get("/{company_id}")
-# async def get_agent_dashboard(company_id: str):
-#     tickets = await get_company_tickets(company_id)
-#     if not tickets:
-#         return {
-#             "metrics": {"aht": 0, "fcr": 0, "csat_score": 0},
-#             "qa_summary": {"policy_violations": []},
-#             "feedback_recommendations": [],
-#             "tickets": []
-#         }
-
-#     aht = calculate_aht(tickets)
-#     fcr = calculate_fcr(tickets)
-#     csat_score = calculate_avg_csat(tickets)
-
-#     analyses = [analyze_conversation(t["conversation"], t) for t in tickets]
-#     all_policy_violations = []
-#     for a in analyses:
-#         all_policy_violations.extend(a["policy_violations"])
-#     unique_policy_violations = list(set(all_policy_violations))
-
-#     gaps = identify_gaps(analyses)
-#     gaps["politeness_scores"] = [np.mean(a["politeness_scores"]) for a in analyses]
-#     recommendations = generate_coaching_plan(gaps)
-
-#     return {
-#         "metrics": {
-#             "aht": aht,
-#             "fcr": fcr,
-#             "csat_score": csat_score
-#         },
-#         "qa_summary": {
-#             "policy_violations": unique_policy_violations
-#         },
-#         "feedback_recommendations": recommendations,
-#         "tickets": [
-#             {
-#                 "id": t["ticketId"],
-#                 "subject": t["conversation"][0]["text"][:30] + "...",
-#                 "status": t["status"],
-#                 "timestamp": t.get("timestamp", datetime.now().isoformat()), 
-#                 "conversation": t["conversation"]
-#             } for t in tickets
-#         ]
-#     }
-
-
-# @router.get("/{company_id}/metrics")
-# async def get_agent_metrics(company_id: str):
-#     tickets = await get_company_tickets(company_id)
-#     if not tickets:
-#         raise HTTPException(status_code=404, detail="No tickets found")
-
-#     aht = calculate_aht(tickets)
-#     fcr = calculate_fcr(tickets)
-#     csat_score = calculate_avg_csat(tickets)
-
-#     return {
-#         "metrics": {
-#             "aht": aht,
-#             "fcr": fcr,
-#             "csat_score": csat_score
-#         }
-#     }
-
-
-# @router.get("/{company_id}/tickets")
-# async def get_agent_tickets_list(company_id: str):
-#     tickets = await get_company_tickets(company_id)
-#     if not tickets:
-#         raise HTTPException(status_code=404, detail="No tickets found")
-
-#     return {
-#         "tickets": [
-#             {
-#                 "id": t["ticketId"],
-#                 "subject": t["conversation"][0]["text"][:30] + "...",
-#                 "status": t["status"],
-#                 "timestamp": t["timestamp"],
-#                 "conversation": t["conversation"]
-#             } for t in tickets
-#         ]
-#     }
-
 # /monitoring/dashboard.py
 
 from fastapi import APIRouter, HTTPException
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import numpy as np
 from datetime import datetime
-import redis.asyncio as redis
 import httpx
-from monitoring.data_handler import get_company_tickets
+
 from monitoring.qa_engine import analyze_conversation
 from monitoring.feedback import identify_gaps, generate_coaching_plan
 
 router = APIRouter(prefix="/dashboard")
-
-# Redis client (for raw conversations)
-r = redis.from_url("redis://localhost:6379/0", decode_responses=True)
 
 # Next.js base URL (where your /api/dashboard-prisma lives)
 NEXTJS_URL = (
@@ -118,9 +17,12 @@ NEXTJS_URL = (
 )
 NEXTJS_TIMEOUT = float(__import__("os").environ.get("NEXTJS_TIMEOUT", "10.0"))
 
-
 async def _fetch_prisma_tickets(company_id: str) -> List[Dict[str, Any]]:
-    """Call Next.js to get all tickets + their Prisma fields."""
+    """
+    Call the Next.js Prisma endpoint to retrieve all tickets for a given company.
+    This endpoint should return a JSON object with a "tickets" array, where each
+    ticket has at least: id, subject, status, timestamp, resolution_time, csat_score, fcr, conversation.
+    """
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(
@@ -131,80 +33,79 @@ async def _fetch_prisma_tickets(company_id: str) -> List[Dict[str, Any]]:
             data = res.json()
             return data.get("tickets", [])
     except httpx.ReadTimeout:
-        # Timeout talking to Next.js → return empty list rather than crash
+        # Timeout talking to Next.js → return empty list
         return []
     except httpx.HTTPError:
         return []
 
 
-async def _load_and_merge(company_id: str) -> List[Dict[str, Any]]:
-    # 1) Raw conversations from Redis
-    raw_tickets = await get_company_tickets(company_id)
-    raw_by_id = {t["ticketId"]: t for t in raw_tickets}
-
-    # 2) Prisma‐recorded tickets via Next.js
-    prisma_tickets = await _fetch_prisma_tickets(company_id)
-
-    # 3) Merge: metadata from Prisma + conversation from Redis (fallback to Prisma)
-    merged: List[Dict[str, Any]] = []
-    for p in prisma_tickets:
-        rt = raw_by_id.get(p["id"])
-        merged.append({
-            "id":              p["id"],
-            "subject":         p["subject"],
-            "status":          p["status"],
-            "timestamp":       p["timestamp"],
-            "resolution_time": p.get("resolution_time"),
-            "csat_score":      p.get("csat_score"),
-            "fcr":             p.get("fcr", False),
-            "conversation":    rt["conversation"] if rt else p.get("conversation", [])
-        })
-    return merged
-
-
 @router.get("/{company_id}")
 async def get_agent_dashboard(company_id: str):
-    tickets = await _load_and_merge(company_id)
+    """
+    Fetch ticket data from Prisma (via Next.js), then compute:
+      - AHT (Average Handling Time)
+      - FCR (First‐Call Resolution) as a percentage (0–100)
+      - CSAT average (or None if no scores)
+      - QA policy violations (unique)
+      - Coaching recommendations
+      - A simplified ticket list for the UI
+    """
+    tickets = await _fetch_prisma_tickets(company_id)
+
+    # If no tickets at all, return zeroed metrics and empty arrays
     if not tickets:
         return {
             "companyId": company_id,
-            "metrics": {"aht": 0.0, "fcr": 0.0, "csat_score": 0.0},
+            "metrics": {"aht": 0.0, "fcr": 0.0, "csat_score": None},
             "qa_summary": {"policy_violations": []},
             "feedback_recommendations": [],
             "tickets": []
         }
 
     total = len(tickets)
-
-    # First-Call Resolution (FCR) rate
+    print(total)
+    # 1) First‐Call Resolution (FCR) as percentage
     fcr_count = len([t for t in tickets if t.get("fcr", False)])
-    fcr = round(fcr_count / total, 2)
+    fcr_pct = round((fcr_count / total) * 100, 2) if total > 0 else 0.0
 
-    # Average Handling Time (AHT) in seconds
-    resolved = [t for t in tickets if t["status"] == "RESOLVED"]
+    # 2) Average Handling Time (AHT) in seconds
+    resolved_tickets = [
+        t for t in tickets
+        if t.get("status") == "RESOLVED" and t.get("resolution_time")
+    ]
     aht_list: List[float] = []
-    for t in resolved:
+    for t in resolved_tickets:
         rt = t.get("resolution_time")
-        if rt:
-            start = datetime.fromisoformat(t["timestamp"])
+        ts = t.get("timestamp")
+        try:
+            start = datetime.fromisoformat(ts)
             end = datetime.fromisoformat(rt)
             aht_list.append((end - start).total_seconds())
+        except Exception:
+            continue
     aht = round(sum(aht_list) / len(aht_list), 1) if aht_list else 0.0
 
-    # CSAT average
+    # 3) CSAT average (None if no scores)
     csat_vals = [
         score for t in tickets
         if isinstance(score := t.get("csat_score"), (int, float))
     ]
-    csat_score = round(sum(csat_vals) / len(csat_vals), 2) if csat_vals else 0.0
+    print(csat_vals)
+    csat_score: Optional[float] = None
+    if csat_vals:
+        csat_score = round(sum(csat_vals) / len(csat_vals), 2)
+    print(csat_score)
+    # 4) QA analysis and coaching recommendations
+    analyses = [
+        analyze_conversation(t.get("conversation", []), t)
+        for t in tickets
+    ]
 
-    # QA analysis and coaching
-    analyses = [analyze_conversation(t["conversation"], t) for t in tickets]
-
-    all_violations = [v for a in analyses for v in a["policy_violations"]]
+    # Collect unique policy violations
+    all_violations = [v for analysis in analyses for v in analysis["policy_violations"]]
     unique_violations = list(set(all_violations))
 
-    # Safely compute politeness means
+    # Compute mean politeness scores per ticket
     politeness_means = [
         float(np.mean(a["politeness_scores"])) if a["politeness_scores"] else 0.0
         for a in analyses
@@ -214,14 +115,14 @@ async def get_agent_dashboard(company_id: str):
     gaps["politeness_scores"] = politeness_means
     recommendations = generate_coaching_plan(gaps)
 
-    # Build the ticket payload for the UI
+    # 5) Build the ticket payload for the UI
     ticket_summaries = [
         {
-            "id":   t["id"],
-            "subject": t["subject"],
-            "status":  t["status"],
-            "timestamp": t["timestamp"],
-            "conversation": t["conversation"]
+            "id":           t["id"],
+            "subject":      t["subject"],
+            "status":       t["status"],
+            "timestamp":    t["timestamp"],
+            "conversation": t.get("conversation", [])
         }
         for t in tickets
     ]
@@ -230,7 +131,7 @@ async def get_agent_dashboard(company_id: str):
         "companyId": company_id,
         "metrics": {
             "aht": aht,
-            "fcr": fcr,
+            "fcr": fcr_pct,
             "csat_score": csat_score
         },
         "qa_summary": {
@@ -243,34 +144,49 @@ async def get_agent_dashboard(company_id: str):
 
 @router.get("/{company_id}/metrics")
 async def get_agent_metrics(company_id: str):
-    tickets = await _load_and_merge(company_id)
+    """
+    Return only the metrics (AHT, FCR%, CSAT) for a given company.
+    """
+    tickets = await _fetch_prisma_tickets(company_id)
     if not tickets:
         raise HTTPException(status_code=404, detail="No tickets found")
 
     total = len(tickets)
+    print(total)
+    # First‐Call Resolution (FCR) %
+    fcr_count = len([t for t in tickets if t.get("fcr", False)])
+    fcr_pct = round((fcr_count / total) * 100, 2) if total > 0 else 0.0
 
-    fcr = round(len([t for t in tickets if t.get("fcr", False)]) / total, 2)
-
-    resolved = [t for t in tickets if t["status"] == "RESOLVED"]
+    # Average Handling Time (AHT)
+    resolved_tickets = [
+        t for t in tickets
+        if t.get("status") == "RESOLVED" and t.get("resolution_time")
+    ]
     aht_list: List[float] = []
-    for t in resolved:
+    for t in resolved_tickets:
         rt = t.get("resolution_time")
-        if rt:
-            start = datetime.fromisoformat(t["timestamp"])
+        ts = t.get("timestamp")
+        try:
+            start = datetime.fromisoformat(ts)
             end = datetime.fromisoformat(rt)
             aht_list.append((end - start).total_seconds())
+        except Exception:
+            continue
     aht = round(sum(aht_list) / len(aht_list), 1) if aht_list else 0.0
 
+    # CSAT average (None if no scores)
     csat_vals = [
         score for t in tickets
         if isinstance(score := t.get("csat_score"), (int, float))
     ]
-    csat_score = round(sum(csat_vals) / len(csat_vals), 2) if csat_vals else 0.0
+    csat_score: Optional[float] = None
+    if csat_vals:
+        csat_score = round(sum(csat_vals) / len(csat_vals), 2)
 
     return {
         "metrics": {
             "aht": aht,
-            "fcr": fcr,
+            "fcr": fcr_pct,
             "csat_score": csat_score
         }
     }
@@ -278,7 +194,10 @@ async def get_agent_metrics(company_id: str):
 
 @router.get("/{company_id}/tickets")
 async def get_agent_tickets_list(company_id: str):
-    tickets = await _load_and_merge(company_id)
+    """
+    Return a simplified list of tickets (id, subject, status, timestamp, conversation).
+    """
+    tickets = await _fetch_prisma_tickets(company_id)
     if not tickets:
         raise HTTPException(status_code=404, detail="No tickets found")
 
@@ -289,7 +208,7 @@ async def get_agent_tickets_list(company_id: str):
                 "subject":      t["subject"],
                 "status":       t["status"],
                 "timestamp":    t["timestamp"],
-                "conversation": t["conversation"]
+                "conversation": t.get("conversation", [])
             }
             for t in tickets
         ]

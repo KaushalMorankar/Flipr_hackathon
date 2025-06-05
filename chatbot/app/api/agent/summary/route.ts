@@ -5,18 +5,19 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import prisma from '@/lib/prisma';
 import { decodeJWT } from '@/lib/jwt';
 import type { Ticket } from '@prisma/client';
+import { time } from 'console';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 export async function POST(req: NextRequest) {
   const { timeframe, subdomain } = await req.json();
-
+  console.log(subdomain,timeframe);
   // 1) Fetch company and its tickets
   const company = await prisma.company.findUnique({
     where: { subdomain },
     include: { tickets: true }
   });
-
+  console.log(company);
   if (!company) {
     return NextResponse.json(
       { error: `Company with subdomain "${subdomain}" not found` },
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
   const openCount     = tickets.filter(
     (t: Ticket) => t.status === 'OPEN'
   ).length;
-
+  console.log(openCount,totalCount,resolvedCount);
   // 4) Build the prompt
   const prompt = `
 You’re an AI assistant analyzing customer support data.
@@ -55,7 +56,7 @@ Use bullet points and keep it concise.
   `;
 
   // 5) Call Gemini
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   const result = await model.generateContent({
     contents: [{
       role: 'user',
