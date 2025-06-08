@@ -81,44 +81,20 @@
 // }
 
 
-// app/company/login/page.tsx   (or wherever your login lives)
+// app/company/login/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 export default function CompanyLoginPage() {
   const router = useRouter();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
 
-  // We’ll store the subdomain once we compute it.
-  const [subdomain, setSubdomain] = useState<string>("");
-
-  // On mount, pull the subdomain out of the host.
-  // E.g. if window.location.hostname === "acme.myapp.com",
-  // then subdomain = "acme".
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const host = window.location.hostname; // e.g. "acme.myapp.com"
-    const parts = host.split(".");
-
-    // If you expect “<company>.yourdomain.com”:
-    // ── parts[0] will be the <company> subdomain.
-    // If you have multiple levels (e.g. "region.acme.myapp.com"),
-    // you can adjust accordingly.
-    if (parts.length >= 3) {
-      setSubdomain(parts[0]);
-    } else {
-      // Fallback (local dev, or no subdomain present).
-      // You can decide how you want to handle `localhost` or dev.
-      setSubdomain(parts[0]);
-    }
-  }, []);
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -126,7 +102,6 @@ export default function CompanyLoginPage() {
     setError(null);
 
     try {
-      // Replace with your real company‐login endpoint
       const res = await fetch("/api/company/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,37 +110,48 @@ export default function CompanyLoginPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || "Login failed");
+        throw new Error(data.error || data.message || "Login failed");
       }
 
-      // Save company token/information however you like:
-      localStorage.setItem("flipr_company", JSON.stringify(data));
-
-      // If we successfully pulled a subdomain, redirect there:
-      if (subdomain) {
-        // Example: /acme/agent/dashboard
-        router.push(`/${subdomain}/agent/dashboard`);
-      } else {
-        // Fallback if subdomain is empty for some reason
-        router.push(`/agent/dashboard`);
-      }
+      localStorage.setItem("flipr_company", JSON.stringify(data.user));
+      router.push(`/${data.user.subdomain}/agent/dashboard`);
     } catch (err: any) {
-      setError(err.message || "Something went wrong");
+      setError(err.message);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-      <div className="bg-white p-8 rounded shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-6">
+    <div className="min-h-screen flex items-center justify-center bg-gray-900 px-4">
+      <div className="max-w-md w-full bg-black/50 backdrop-blur-md rounded-2xl shadow-lg p-8">
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <Image
+            src="/logo.png"
+            alt="Your Company Logo"
+            width={64}
+            height={64}
+            className="rounded-full"
+          />
+        </div>
+
+        {/* Heading */}
+        <h1 className="text-3xl font-bold text-white text-center mb-2">
           Company Admin Login
-        </h2>
+        </h1>
+        <p className="text-center text-gray-300 mb-6">
+          Enter your credentials to access your dashboard
+        </p>
 
-        {error && <p className="text-red-600 mb-4 text-sm">{error}</p>}
+        {error && (
+          <div className="bg-red-100 text-red-800 px-4 py-2 rounded mb-4 text-sm">
+            {error}
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-600">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-gray-200 mb-1">
               Email
             </label>
             <input
@@ -173,13 +159,15 @@ export default function CompanyLoginPage() {
               name="email"
               value={form.email}
               onChange={handleChange}
-              className="mt-1 w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring focus:ring-blue-200"
               required
+              className="w-full px-4 py-3 rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 bg-gray-800 placeholder-gray-500 text-gray-100"
+              placeholder="you@company.com"
             />
           </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-600">
+          {/* Password */}
+          <div>
+            <label className="block text-sm font-medium text-gray-200 mb-1">
               Password
             </label>
             <input
@@ -187,16 +175,35 @@ export default function CompanyLoginPage() {
               name="password"
               value={form.password}
               onChange={handleChange}
-              className="mt-1 w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring focus:ring-blue-200"
               required
+              className="w-full px-4 py-3 rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 bg-gray-800 placeholder-gray-500 text-gray-100"
+              placeholder="••••••••"
             />
           </div>
 
+          {/* Remember + Forgot */}
+          <div className="flex items-center justify-between text-sm">
+            <label className="flex items-center space-x-2 text-gray-200">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-600 focus:ring-2 focus:ring-red-500 bg-gray-800"
+              />
+              <span>Remember me</span>
+            </label>
+            <a
+              href="#"
+              className="text-red-400 hover:underline focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              Forgot password?
+            </a>
+          </div>
+
+          {/* Submit */}
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition"
+            className="w-full py-3 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition"
           >
-            Login
+            Sign In
           </button>
         </form>
       </div>

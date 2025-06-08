@@ -1,126 +1,108 @@
 // app/api/customer/escalate/route.ts
-import { NextRequest } from 'next/server';
-import prisma from '@/lib/prisma';
+
+import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient, TicketStatus } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+type EscalatePayload = {
+  companyId?: string;
+  sessionId?: string;
+  conversation?: Array<{
+    role: 'user' | 'bot';
+    text: string;
+  }>;
+  status?: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+  subject?: string;
+  priority?: number;
+};
+
 export async function POST(req: NextRequest) {
   try {
-    const { message, companyId, sessionId } = await req.json();
+    // 1) Parse the JSON body
+    const body = (await req.json()) as EscalatePayload;
+    console.log('📝  Received payload:', JSON.stringify(body, null, 2));
 
-    // ✅ Check if company exists
-    const company = await prisma.company.findUnique({
-      where: { id: companyId }
-    });
-    console.log(company);
-    if (!companyId || !message) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields' }),
+    const { companyId, sessionId, conversation, status, subject, priority } = body;
+
+    // 2) Validate required fields
+    if (
+      !companyId ||
+      !sessionId ||
+      !Array.isArray(conversation) ||
+      conversation.length === 0
+    ) {
+      return new NextResponse(
+        JSON.stringify({
+          error: 'Missing companyId, sessionId, or non-empty conversation array',
+        }),
         { status: 400 }
       );
     }
 
-    // ✅ Create ticket with required fields
+    // 3) Verify that the company actually exists
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+    });
+    if (!company) {
+      return new NextResponse(
+        JSON.stringify({ error: 'Company not found' }),
+        { status: 404 }
+      );
+    }
+
+    // 4) Build the nested‐create array of Message objects
+    const messagesToCreate = conversation.map((msg) => ({
+      content: msg.text,
+      // Prisma.Message.role is a String, so we map 'user' → 'USER', 'bot' → 'ASSISTANT'
+      role: msg.role === 'user' ? 'USER' : 'ASSISTANT',
+      // If the sender is the “user,” we attach sessionId; if it’s the bot, we leave senderId null.
+      senderId: msg.role === 'user' ? sessionId : null,
+    }));
+
+    // 5) Determine which TicketStatus to use.
+    //    We imported `TicketStatus` directly above, so Object.values(TicketStatus) is guaranteed to be valid.
+    const validStatuses = new Set(Object.values(TicketStatus));
+    const ticketStatus: TicketStatus =
+      status && validStatuses.has(status)
+        ? (status as TicketStatus)
+        : TicketStatus.OPEN;
+
+    console.log('✨  Resolved ticketStatus =', ticketStatus);
+    console.log(companyId);
+    // 6) Create the Ticket + nested Messages in one call
     const ticket = await prisma.ticket.create({
       data: {
-        subject: `Escalated Chat: ${message.slice(0, 30)}...`,
-        status: 'OPEN',
-        companyId,
-        priority: 10, // ✅ Set default priority
+        subject:
+          subject ?? `Escalated Chat: ${conversation[0]?.text.slice(0, 30)}...`,
+        status: ticketStatus,
+        priority: priority ?? 10,
+        companyId: companyId,
         messages: {
-          create: {
-            content: message,
-            role: 'USER',
-            senderId: null // ✅ No senderId if not logged in
-          }
-        }
+          create: messagesToCreate,
+        },
       },
-      include: { messages: true }
+      include: { messages: true },
     });
 
-    return new Response(
+    console.log('✅ Ticket created:', ticket);
+
+    // 7) Return a 200 with the new ticket’s ID + status
+    return new NextResponse(
       JSON.stringify({
         response: 'Your request has been escalated to an agent.',
         ticketId: ticket.id,
-        status: ticket.status
+        status: ticket.status,
       }),
       { status: 200 }
     );
+  } catch (err: any) {
+    // 8) If anything goes wrong, log the error and send a 500 + JSON error
+    console.error('🔥  /escalate error:', err);
 
-  } catch (error: any) {
-    console.error('Escalation error:', error.message);
-    return new Response(
-      JSON.stringify({ error: 'Failed to escalate chat' }),
+    return new NextResponse(
+      JSON.stringify({ error: 'Failed to create escalation ticket' }),
       { status: 500 }
     );
   }
 }
-// app/api/customer/escalate/route.ts
-// import { NextRequest } from 'next/server';
-// import prisma from '@/lib/prisma';
-
-// export async function POST(req: NextRequest) {
-//   try {
-//     const body = await req.json().catch(() => null);
-    
-//     if (!body || !body.message || (!body.companyId && !body.subdomain)) {
-//       return new Response(
-//         JSON.stringify({ error: 'Missing message or companyId/subdomain' }),
-//         { status: 400 }
-//       );
-//     }
-
-//     const { message, companyId, subdomain, sessionId } = body;
-
-//     // ✅ Use companyId to get subdomain if not provided
-//     let resolvedSubdomain = subdomain;
-//     if (!resolvedSubdomain && companyId) {
-//       const company = await prisma.company.findUnique({
-//         where: { id: companyId },
-//         select: { subdomain: true }
-//       });
-
-//       if (!company) {
-//         return new Response(
-//           JSON.stringify({ error: 'Company not found' }),
-//           { status: 404 }
-//         );
-//       }
-
-//       resolvedSubdomain = company.subdomain;
-//     }
-
-//     // ✅ Create ticket with companyId
-//     const ticket = await prisma.ticket.create({
-//       data: {
-//         subject: `Escalated Chat: ${message.slice(0, 30)}...`,
-//         status: 'OPEN',
-//         companyId: companyId || null,
-//         priority: 10
-//       }
-//     });
-
-//     // ✅ Create message
-//     await prisma.message.create({
-//       data: {
-//         content: message,
-//         role: 'USER',
-//         senderId: null,
-//         ticketId: ticket.id
-//       }
-//     });
-
-//     return new Response(
-//       JSON.stringify({
-//         response: 'Your request has been escalated to an agent.',
-//         ticketId: ticket.id,
-//         subdomain: resolvedSubdomain
-//       }),
-//       { status: 201 }
-//     );
-
-//   } catch (error: any) {
-//     console.error('Escalation error:', error.message);
-//     return new Response(
-//       JSON.stringify({ error: 'Failed to escalate chat' }),
-//       { status: 500 }
-//     );
-//   }
-// }
