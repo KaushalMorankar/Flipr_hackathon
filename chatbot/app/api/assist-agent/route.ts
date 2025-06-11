@@ -1,38 +1,52 @@
-// app/api/assist-agent/route.ts
+// File: app/api/assist-agent/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 
 const PYTHON_BACKEND = process.env.PYTHON_BACKEND_URL || "http://localhost:8000";
+const ROLE_MAP: Record<string, "user" | "agent"> = {
+  USER: "user", user: "user",
+  ASSISTANT: "agent", assistant: "agent",
+};
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Read incoming JSON (ticketId + messages)
-    const body = await req.json();
+    const { ticketId, messages } = (await req.json()) as {
+      ticketId: string;
+      messages: Array<Record<string, any>>;
+    };
 
-    // 2. Forward to your Python FastAPI /assist-agent endpoint
+    if (!ticketId || !Array.isArray(messages)) {
+      return NextResponse.json({ error: "Must include ticketId and messages" }, { status: 400 });
+    }
+
+    console.log("👀 raw messages from client:", JSON.stringify(messages, null, 2));
+
+    const transformed = messages.map((m, i) => {
+      const role = ROLE_MAP[m.role] ?? "user";
+      const text = m.content ?? m.message ?? m.text;
+      if (typeof text !== "string") {
+        console.warn(`Message[${i}] missing text:`, m);
+      }
+      // SEND as `text` so FastAPI’s Pydantic model will accept it
+      return { role, text };
+    });
+
     const res = await fetch(`${PYTHON_BACKEND}/assist-agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ticketId, messages: transformed }),
     });
 
-    // 3. If Python returned an error, bubble it up
     if (!res.ok) {
-      const errBody = await res.text();
-      console.error("Python /assist-agent error:", res.status, errBody);
-      return NextResponse.json(
-        { error: `Backend error (${res.status})` },
-        { status: 502 }
-      );
+      const details = await res.text();
+      console.error("Python /assist-agent error:", res.status, details);
+      return NextResponse.json({ error: `Backend error (${res.status})`, details }, { status: 502 });
     }
 
-    // 4. Parse the AI suggestion JSON and pass it back to the client
     const { suggestion } = await res.json();
     return NextResponse.json({ suggestion });
-  } catch (e) {
+  } catch (e: any) {
     console.error("Proxy to Python /assist-agent failed:", e);
-    return NextResponse.json(
-      { error: "Internal proxy error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal proxy error", message: e.message }, { status: 500 });
   }
 }

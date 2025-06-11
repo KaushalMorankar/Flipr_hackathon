@@ -327,8 +327,11 @@ async def assist_agent(req: AssistRequest):
     msgs = req.messages
 
     # 1) build one big USER blob
-    user_texts = [m.content.strip() for m in msgs if m.role == "USER"]
+    user_texts = [m.text.strip() for m in msgs if m.role.upper() == "USER"]
     full_blob = "\n".join(user_texts)
+
+    if not full_blob.strip():
+        raise HTTPException(status_code=200, detail="No valid user messages to process.")
 
     # 2) chunk into ~800-word pieces
     paras = full_blob.split("\n")
@@ -363,7 +366,6 @@ async def assist_agent(req: AssistRequest):
 
     query_vec = embed_text(full_blob)
     results = search_index(query_vec, ticket_id, top_k=3)
-
     # 5) build context
     if results:
         context = "\n".join(f"— {r['title'] or r['docId']}: {r['content']}" for r in results)
@@ -371,7 +373,8 @@ async def assist_agent(req: AssistRequest):
         last3 = user_texts[-3:]
         context = "\n".join(f"— Customer said: {t}" for t in last3) or "No context found."
 
-    # 6) assemble prompt
+    # 6) assemble prompt (use m.text)
+    full_transcript = "\n".join(f"{m.role}: {m.text}" for m in msgs)
     prompt = f"""
 You are a support coach. Given these snippets and the full transcript,
 provide (1) a 2-3 sentence summary of the customer's issue and
@@ -381,12 +384,12 @@ provide (1) a 2-3 sentence summary of the customer's issue and
 {context}
 
 --- FULL TRANSCRIPT ---
-{chr(10).join(f"{m.role}: {m.content}" for m in msgs)}
+{full_transcript}
 
 --- RESPONSE:
 """.strip()
 
-    # 7) call Gemini
+    # 7) call your LLM
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         resp = model.generate_content(prompt)

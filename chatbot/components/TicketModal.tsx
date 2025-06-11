@@ -1,4 +1,3 @@
-// components/TicketModal.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -12,21 +11,37 @@ interface TicketModalProps {
   onResolve: (note: string) => void;
 }
 
-export default function TicketModal({ ticket, onClose, onResolve }: TicketModalProps) {
+export default function TicketModal({
+  ticket,
+  onClose,
+  onResolve,
+}: TicketModalProps) {
   const [aiSuggestion, setAiSuggestion] = useState<string>("");
   const [note, setNote] = useState<string>("");
 
   useEffect(() => {
+    // Reset states when a new ticket is opened
+    setAiSuggestion("");
+    setNote("");
+
     async function getAISuggestion() {
       try {
-        const res = await axios.post("/api/assist-agent", {
+        const res = await axios.post<{ suggestion: string }>("/api/assist-agent", {
           ticketId: ticket.id,
           messages: ticket.conversation,
         });
-        setAiSuggestion(res.data.suggestion || "No suggestion available.");
+        console.log("🛠️  /api/assist-agent response:", res.data);
+        const suggestion = res.data.suggestion?.trim() || "No suggestion available.";
+
+        // 1) display it above
+        setAiSuggestion(suggestion);
+        // 2) AND prefill the textarea with it
+        setNote(suggestion);
       } catch (err) {
         console.error("AI suggestion error:", err);
         setAiSuggestion("Could not load suggestion.");
+        // still prefill the textarea so user can type
+        setNote("");
       }
     }
 
@@ -44,13 +59,17 @@ export default function TicketModal({ ticket, onClose, onResolve }: TicketModalP
         >
           ✕
         </button>
+
         <h2 className="text-xl font-semibold mb-2">{ticket.subject}</h2>
-        <p className="text-sm text-gray-500 mb-4">{new Date(ticket.timestamp).toLocaleString()}</p>
+        <p className="text-sm text-gray-500 mb-4">
+          {new Date(ticket.timestamp).toLocaleString()}
+        </p>
 
         <ConversationViewer conversation={ticket.conversation} />
 
         {ticket.status !== "RESOLVED" && (
           <>
+            {/* AI Suggestion Display */}
             <div className="mt-4">
               <h3 className="text-lg font-medium">AI Suggestion</h3>
               <p className="text-sm text-gray-700 bg-gray-100 p-3 rounded mt-1 whitespace-pre-line">
@@ -58,16 +77,19 @@ export default function TicketModal({ ticket, onClose, onResolve }: TicketModalP
               </p>
             </div>
 
+            {/* Prefilled / Editable Resolution Note */}
             <div className="mt-4">
+              <h3 className="text-lg font-medium">Your Resolution Note</h3>
               <textarea
                 rows={4}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Add resolution note or edit AI suggestion..."
+                placeholder="You can edit the AI suggestion or write your own…"
                 className="w-full border rounded p-2"
               />
             </div>
 
+            {/* Resolve Button */}
             <div className="mt-4 flex justify-end">
               <button
                 onClick={() => onResolve(note)}
